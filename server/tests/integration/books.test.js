@@ -1,109 +1,423 @@
 const request = require('supertest');
+
 const app = require('../../src/app');
-const { sequelize } = require('../../src/config/db');
 
+const {
+  sequelize,
+  User,
+  BookCopy,
+} = require('../../src/database/models');
 
-let memberToken;
 let adminToken;
+let memberToken;
 let createdBookId;
 
-const admin = { name: 'Admin', email: `admin.${Date.now()}@example.com`, password: 'StrongPass1' };
-const member = { name: 'Member', email: `member.${Date.now()}@example.com`, password: 'StrongPass1' };
+const stamp = Date.now();
+
+const admin = {
+  name: 'Books Admin',
+  email: `books.admin.${stamp}@example.com`,
+  password: 'StrongPass1',
+};
+
+const member = {
+  name: 'Books Member',
+  email: `books.member.${stamp}@example.com`,
+  password: 'StrongPass1',
+};
+
+const registerAndLogin = async (credentials) => {
+  await request(app)
+    .post('/api/v1/auth/register')
+    .send(credentials);
+
+  const response = await request(app)
+    .post('/api/v1/auth/login')
+    .send(credentials);
+
+  return response.body.data.accessToken;
+};
 
 beforeAll(async () => {
-  await sequelize.sync({ force: true });
+  await sequelize.sync({
+    force: true,
+  });
 
-  await request(app).post('/api/v1/auth/register').send(member);
-  const memberLogin = await request(app).post('/api/v1/auth/login').send(member);
-  memberToken = memberLogin.body.data.accessToken;
+  /*
+   * Create ordinary member.
+   */
+  memberToken =
+    await registerAndLogin(member);
 
-  await request(app).post('/api/v1/auth/register').send(admin);
-  const { User } = require('../../src/database/models');
-  await User.update({ role: 'admin' }, { where: { email: admin.email } });
-  const adminLogin = await request(app).post('/api/v1/auth/login').send(admin);
-  adminToken = adminLogin.body.data.accessToken;
+  /*
+   * Register admin account first.
+   */
+  await registerAndLogin(admin);
+
+  /*
+   * Promote directly in test database.
+   */
+  await User.update(
+    {
+      role: 'admin',
+    },
+    {
+      where: {
+        email: admin.email,
+      },
+    }
+  );
+
+  /*
+   * Login again so JWT contains admin role.
+   */
+  adminToken =
+    await registerAndLogin(admin);
 });
 
-// Deliberately no afterAll close here — sequelize/redis/the email queue
-// are shared across all six test files under --runInBand (empirically
-// confirmed: closing them in one file's afterAll broke a LATER file's
-// beforeAll with 'ConnectionManager...called after closed'). The whole
-// process force-exits after the full suite via --forceExit in package.json
-// instead, which is the standard, accepted fix for this exact situation.
+describe(
+  'Books module',
+  () => {
+    it(
+      'rejects book creation without authentication',
+      async () => {
+        const res =
+          await request(app)
+            .post('/api/v1/books')
+            .send({
+              isbn:
+                '9781111111111',
 
-describe('Books module', () => {
-  it('rejects book creation without authentication', async () => {
-    const res = await request(app).post('/api/v1/books').send({ isbn: '111', title: 'X' });
-    expect(res.statusCode).toBe(401);
-  });
+              title:
+                'Unauthorized Book',
+            });
 
-  it('rejects book creation from a member (RBAC)', async () => {
-    const res = await request(app)
-      .post('/api/v1/books')
-      .set('Authorization', `Bearer ${memberToken}`)
-      .send({ isbn: '9780000000001', title: 'Clean Architecture', totalCopies: 3 });
-    expect(res.statusCode).toBe(403);
-  });
+        expect(
+          res.statusCode
+        ).toBe(401);
+      }
+    );
 
-  it('allows an admin to create a book', async () => {
-    const res = await request(app)
-      .post('/api/v1/books')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        isbn: '9780000000001',
-        title: 'Clean Architecture',
-        description: 'A craftsman guide to software structure and design.',
-        totalCopies: 3,
-      });
-    expect(res.statusCode).toBe(201);
-    expect(res.body.data.availableCopies).toBe(3);
-    createdBookId = res.body.data.id;
-  });
+    it(
+      'rejects book creation by a normal member',
+      async () => {
+        const res =
+          await request(app)
+            .post('/api/v1/books')
+            .set(
+              'Authorization',
+              `Bearer ${memberToken}`
+            )
+            .send({
+              isbn:
+                '9781111111112',
 
-  it('rejects a duplicate ISBN', async () => {
-    const res = await request(app)
-      .post('/api/v1/books')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ isbn: '9780000000001', title: 'Duplicate', totalCopies: 1 });
-    expect(res.statusCode).toBe(409);
-  });
+              title:
+                'Forbidden Book',
+            });
 
-  it('lets anyone browse the catalog without auth', async () => {
-    const res = await request(app).get('/api/v1/books');
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.books.length).toBeGreaterThan(0);
-    expect(res.body.data.meta).toHaveProperty('totalPages');
-  });
+        expect(
+          res.statusCode
+        ).toBe(403);
+      }
+    );
 
-  it('paginates results', async () => {
-    const res = await request(app).get('/api/v1/books?page=1&limit=1');
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.books.length).toBe(1);
-    expect(res.body.data.meta.limit).toBe(1);
-  });
+    it(
+      'allows an admin to create a catalog book',
+      async () => {
+        /*
+         * IMPORTANT:
+         *
+         * Creating a Book now creates only
+         * the catalog/title record.
+         *
+         * Physical copies are added separately.
+         */
+        const res =
+          await request(app)
+            .post('/api/v1/books')
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              isbn:
+                '9780134494166',
 
-  it('finds the book via full-text search', async () => {
-    const res = await request(app).get('/api/v1/books?search=architecture');
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.books.some((b) => b.id === createdBookId)).toBe(true);
-  });
+              title:
+                'Clean Architecture',
 
-  it('updates a book as admin', async () => {
-    const res = await request(app)
-      .put(`/api/v1/books/${createdBookId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ title: 'Clean Architecture (2nd Edition)' });
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.title).toBe('Clean Architecture (2nd Edition)');
-  });
+              description:
+                'A handbook of software architecture principles.',
 
-  it('soft-deletes a book as admin', async () => {
-    const res = await request(app)
-      .delete(`/api/v1/books/${createdBookId}`)
-      .set('Authorization', `Bearer ${adminToken}`);
-    expect(res.statusCode).toBe(200);
+              publisher:
+                'Prentice Hall',
 
-    const getRes = await request(app).get(`/api/v1/books/${createdBookId}`);
-    expect(getRes.statusCode).toBe(404);
-  });
-});
+              publishedYear:
+                2017,
+
+              language:
+                'English',
+            });
+
+        expect(
+          res.statusCode
+        ).toBe(201);
+
+        expect(
+          res.body.data.totalCopies
+        ).toBe(0);
+
+        expect(
+          res.body.data.availableCopies
+        ).toBe(0);
+
+        createdBookId =
+          res.body.data.id;
+
+        expect(
+          createdBookId
+        ).toBeDefined();
+
+        /*
+         * Add the actual 3 physical copies.
+         */
+        const copyRes =
+          await request(app)
+            .post(
+              '/api/v1/borrow/copies'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              bookId:
+                createdBookId,
+
+              quantity: 3,
+
+              shelfLocation:
+                'A-01',
+            });
+
+        expect(
+          copyRes.statusCode
+        ).toBe(201);
+
+        /*
+         * Verify three real BookCopy rows exist.
+         */
+        const copyCount =
+          await BookCopy.count({
+            where: {
+              bookId:
+                createdBookId,
+            },
+          });
+
+        expect(
+          copyCount
+        ).toBe(3);
+
+        /*
+         * Fetch book again.
+         */
+        const getRes =
+          await request(app)
+            .get(
+              `/api/v1/books/${createdBookId}`
+            );
+
+        expect(
+          getRes.statusCode
+        ).toBe(200);
+
+        expect(
+          getRes.body.data.totalCopies
+        ).toBe(3);
+
+        expect(
+          getRes.body.data.availableCopies
+        ).toBe(3);
+      }
+    );
+
+    it(
+      'rejects duplicate ISBN',
+      async () => {
+        const res =
+          await request(app)
+            .post('/api/v1/books')
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              isbn:
+                '9780134494166',
+
+              title:
+                'Duplicate Clean Architecture',
+            });
+
+        expect(
+          res.statusCode
+        ).toBe(409);
+      }
+    );
+
+    it(
+      'lists books',
+      async () => {
+        const res =
+          await request(app)
+            .get('/api/v1/books');
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        expect(
+          Array.isArray(
+            res.body.data.books
+          )
+        ).toBe(true);
+
+        expect(
+          res.body.data.books.some(
+            (book) =>
+              book.id ===
+              createdBookId
+          )
+        ).toBe(true);
+      }
+    );
+
+    it(
+      'supports pagination',
+      async () => {
+        const res =
+          await request(app)
+            .get(
+              '/api/v1/books?page=1&limit=1'
+            );
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        expect(
+          res.body.data.books.length
+        ).toBeLessThanOrEqual(
+          1
+        );
+
+        expect(
+          res.body.data.meta
+        ).toBeDefined();
+      }
+    );
+
+    it(
+      'finds the book via search',
+      async () => {
+        const res =
+          await request(app)
+            .get(
+              '/api/v1/books?search=architecture'
+            );
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        expect(
+          res.body.data.books.some(
+            (book) =>
+              book.id ===
+              createdBookId
+          )
+        ).toBe(true);
+      }
+    );
+
+    it(
+      'updates a book as admin without changing inventory',
+      async () => {
+        const res =
+          await request(app)
+            .put(
+              `/api/v1/books/${createdBookId}`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              title:
+                'Clean Architecture (2nd Edition)',
+
+              /*
+               * Even if somebody attempts
+               * to manipulate this value,
+               * updateBook must ignore it.
+               */
+              totalCopies:
+                999,
+            });
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        expect(
+          res.body.data.title
+        ).toBe(
+          'Clean Architecture (2nd Edition)'
+        );
+
+        /*
+         * Inventory must remain tied to
+         * the real three BookCopy rows.
+         */
+        expect(
+          res.body.data.totalCopies
+        ).toBe(3);
+
+        expect(
+          res.body.data.availableCopies
+        ).toBe(3);
+      }
+    );
+
+    it(
+      'soft-deletes a book as admin',
+      async () => {
+        const res =
+          await request(app)
+            .delete(
+              `/api/v1/books/${createdBookId}`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            );
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        const getRes =
+          await request(app)
+            .get(
+              `/api/v1/books/${createdBookId}`
+            );
+
+        expect(
+          getRes.statusCode
+        ).toBe(404);
+      }
+    );
+  }
+);

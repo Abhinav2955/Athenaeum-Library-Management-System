@@ -8,17 +8,27 @@ const createBookSchema = z.object({
     title: z.string().trim().min(1).max(255),
     description: z.string().trim().max(5000).optional(),
     publisher: z.string().trim().max(150).optional(),
-    publishedYear: z.coerce.number().int().min(1000).max(new Date().getFullYear()).optional(),
+    publishedYear: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(new Date().getFullYear())
+      .optional(),
     language: z.string().trim().max(50).optional(),
     coverUrl: z.string().url().optional(),
     authorIds: z.array(z.string().uuid()).optional().default([]),
     categoryIds: z.array(z.string().uuid()).optional().default([]),
-    totalCopies: z.coerce.number().int().min(0).default(1),
+
+    // Creating a catalog entry does NOT create a physical book copy.
+    // Physical inventory is created through addCopies().
+    totalCopies: z.coerce.number().int().min(0).default(0),
   }),
 });
 
 const updateBookSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
+  params: z.object({
+    id: z.string().uuid(),
+  }),
   body: createBookSchema.shape.body.partial(),
 });
 
@@ -28,24 +38,58 @@ const listBooksSchema = z.object({
     categoryId: z.string().uuid().optional(),
     authorId: z.string().uuid().optional(),
     language: z.string().trim().max(50).optional(),
+
     availableOnly: z
       .enum(['true', 'false'])
       .optional()
       .transform((v) => v === 'true'),
+
     page: z.coerce.number().int().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
-    sortBy: z.enum(['title', 'publishedYear', 'avgRating', 'createdAt']).optional().default('createdAt'),
-    sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
+
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional(),
+
+    sortBy: z
+      .enum([
+        'title',
+        'publishedYear',
+        'avgRating',
+        'createdAt',
+      ])
+      .optional()
+      .default('createdAt'),
+
+    sortOrder: z
+      .enum(['asc', 'desc'])
+      .optional()
+      .default('desc'),
   }),
 });
 
 const idParamSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
+  params: z.object({
+    id: z.string().uuid(),
+  }),
 });
 
 const recommendationsSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
-  query: z.object({ limit: z.coerce.number().int().min(1).max(20).optional().default(5) }),
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+
+  query: z.object({
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .default(5),
+  }),
 });
 
 module.exports = {
