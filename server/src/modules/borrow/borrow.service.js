@@ -29,21 +29,31 @@ const LOAN_PERIOD_DAYS = 14;
 const MAX_RENEWALS = 2;
 const MAX_ACTIVE_LOANS_PER_USER = 5;
 
-const addDays = (
-  date,
-  days
-) =>
+const addDays = (date, days) =>
   new Date(
     date.getTime() +
       days * 86400000
   );
 
 /*
- * Creates actual physical BookCopy rows.
+ * Transaction-level membership check.
  *
- * This is now the ONLY normal operation that
- * increases totalCopies.
+ * Members whose membership is suspended or expired
+ * may still be allowed to log in depending on the
+ * authentication policy, but they cannot borrow or
+ * renew books.
  */
+const assertActiveMembership = (user) => {
+  if (
+    user.membershipStatus !==
+    'active'
+  ) {
+    throw ApiError.forbidden(
+      'Your library membership is not active'
+    );
+  }
+};
+
 const addCopies = async ({
   bookId,
   shelfLocation,
@@ -51,11 +61,6 @@ const addCopies = async ({
 }) => {
   return sequelize.transaction(
     async (t) => {
-      /*
-       * Lock the Book row so two simultaneous
-       * add-copy operations cannot corrupt
-       * the aggregate counters.
-       */
       const book =
         await Book.findByPk(
           bookId,
@@ -99,11 +104,6 @@ const addCopies = async ({
         copies.push(copy);
       }
 
-      /*
-       * Because every newly created copy has
-       * status "available", both counters
-       * increase by exactly quantity.
-       */
       book.totalCopies +=
         quantity;
 
@@ -119,24 +119,6 @@ const addCopies = async ({
   );
 };
 
-/*
- * Checkout supports two different cases:
- *
- * 1. Normal checkout:
- *
- *    available -> borrowed
- *
- *    availableCopies decreases.
- *
- *
- * 2. Reservation pickup:
- *
- *    reserved -> borrowed
- *
- *    availableCopies DOES NOT decrease,
- *    because reserved copies were already
- *    removed from general availability.
- */
 const checkout = async (
   requestingUser,
   {
@@ -148,6 +130,11 @@ const checkout = async (
     userId ||
     requestingUser.id;
 
+  /*
+   * Members can borrow only for themselves.
+   *
+   * Staff can perform checkout for another member.
+   */
   if (
     userId &&
     userId !==
@@ -180,12 +167,60 @@ const checkout = async (
         );
       }
 
-      if (
-        borrower.membershipStatus !==
-        'active'
-      ) {
-        throw ApiError.forbidden(
-          'This membership is not active'
+      /*
+       * Part 2:
+       *
+       * Suspended / expired / otherwise inactive
+       * membership cannot perform circulation.
+       */
+      assertActiveMembership(
+        borrower
+      );
+
+      /*
+       * Part 2:
+       *
+       * Do NOT rely only on the hourly overdue job.
+       *
+       * A loan is overdue if:
+       *
+       * status === overdue
+       *
+       * OR
+       *
+       * status is still active but dueAt has already
+       * passed.
+       */
+      const overdueLoan =
+        await BorrowRecord.findOne({
+          where: {
+            userId:
+              borrowerId,
+
+            [Op.or]: [
+              {
+                status:
+                  'overdue',
+              },
+
+              {
+                status:
+                  'active',
+
+                dueAt: {
+                  [Op.lt]:
+                    new Date(),
+                },
+              },
+            ],
+          },
+
+          transaction: t,
+        });
+
+      if (overdueLoan) {
+        throw ApiError.badRequest(
+          'Return overdue books before borrowing another book'
         );
       }
 
@@ -215,11 +250,19 @@ const checkout = async (
         );
       }
 
+      /*
+       * Existing fine restriction remains active.
+       */
       await fineService
         .assertCheckoutNotBlocked(
           borrowerId
         );
 
+      /*
+       * Prevent borrowing another physical copy
+       * of the same title while one is already
+       * checked out.
+       */
       const alreadyHasThisBook =
         await BorrowRecord.findOne({
           where: {
@@ -261,8 +304,8 @@ const checkout = async (
       }
 
       /*
-       * First check whether this member already
-       * has a reserved physical copy waiting.
+       * Prefer an already-reserved physical copy
+       * for this member.
        */
       const readyReservation =
         await Reservation.findOne({
@@ -277,18 +320,13 @@ const checkout = async (
           },
 
           transaction: t,
+
           lock:
             t.LOCK.UPDATE,
         });
 
       let copy = null;
 
-      /*
-       * Important flag.
-       *
-       * Reserved copies are already outside the
-       * available inventory count.
-       */
       let checkedOutFromReservation =
         false;
 
@@ -334,8 +372,8 @@ const checkout = async (
       }
 
       /*
-       * If the member has no reserved copy,
-       * take one from general available stock.
+       * If no reservation copy exists, obtain a
+       * normally available physical copy.
        */
       if (!copy) {
         copy =
@@ -369,33 +407,23 @@ const checkout = async (
         transaction: t,
       });
 
-      /*
-       * Lock book aggregate counters before
-       * changing them.
-       */
       const book =
         await Book.findByPk(
           bookId,
           {
             transaction: t,
+
             lock:
               t.LOCK.UPDATE,
           }
         );
 
       /*
-       * NORMAL:
-       *
-       * available -> borrowed
-       *
-       * decrement.
-       *
-       *
-       * RESERVED:
+       * Part 1 inventory rule:
        *
        * reserved -> borrowed
        *
-       * do NOT decrement again.
+       * does not decrease availability again.
        */
       if (
         !checkedOutFromReservation
@@ -460,6 +488,7 @@ const returnBook = async (
               {
                 model:
                   BookCopy,
+
                 as: 'copy',
               },
             ],
@@ -503,16 +532,6 @@ const returnBook = async (
         transaction: t,
       });
 
-      /*
-       * Try to give the returned physical copy
-       * directly to the next reservation.
-       *
-       * If this succeeds:
-       *
-       * borrowed -> reserved
-       *
-       * It NEVER enters general availability.
-       */
       const fulfilled =
         await reservationService
           .tryFulfillNextReservation(
@@ -521,11 +540,6 @@ const returnBook = async (
             t
           );
 
-      /*
-       * No reservation waiting.
-       *
-       * borrowed -> available
-       */
       if (!fulfilled) {
         record.copy.status =
           'available';
@@ -537,26 +551,17 @@ const returnBook = async (
         );
       }
 
-      /*
-       * Lock the aggregate Book row.
-       */
       const book =
         await Book.findByPk(
           record.copy.bookId,
           {
             transaction: t,
+
             lock:
               t.LOCK.UPDATE,
           }
         );
 
-      /*
-       * Only increase availableCopies when the
-       * physical copy actually becomes available.
-       *
-       * If it became reserved instead,
-       * availability remains unchanged.
-       */
       if (!fulfilled) {
         book.availableCopies =
           Math.min(
@@ -570,10 +575,6 @@ const returnBook = async (
         });
       }
 
-      /*
-       * Fine generation remains inside the same
-       * transaction as the return.
-       */
       if (wasOverdue) {
         const fine =
           await fineService
@@ -614,6 +615,11 @@ const renew = async (
   recordId,
   requestingUser
 ) => {
+  /*
+   * Load borrower as well as physical copy because
+   * renewal must validate the MEMBER whose loan
+   * is being renewed.
+   */
   const record =
     await BorrowRecord.findByPk(
       recordId,
@@ -622,7 +628,22 @@ const renew = async (
           {
             model:
               BookCopy,
+
             as: 'copy',
+          },
+
+          {
+            model:
+              User,
+
+            as: 'borrower',
+
+            attributes: [
+              'id',
+              'name',
+              'email',
+              'membershipStatus',
+            ],
           },
         ],
       }
@@ -650,10 +671,59 @@ const renew = async (
   }
 
   /*
-   * Part 2 will improve overdue renewal rules.
-   * We intentionally leave current business
-   * behavior unchanged in Part 1.
+   * Part 2:
+   *
+   * Renewal belongs to the borrower.
+   *
+   * Even if an administrator performs the action,
+   * a suspended or expired member should not receive
+   * an extension.
    */
+  if (record.borrower) {
+    assertActiveMembership(
+      record.borrower
+    );
+  } else {
+    const borrower =
+      await User.findByPk(
+        record.userId
+      );
+
+    if (!borrower) {
+      throw ApiError.notFound(
+        'Member not found'
+      );
+    }
+
+    assertActiveMembership(
+      borrower
+    );
+  }
+
+  /*
+   * Part 2 critical fix:
+   *
+   * The scheduler may not yet have changed
+   *
+   * active -> overdue.
+   *
+   * dueAt itself is the authoritative deadline.
+   */
+  if (
+    record.status ===
+      'overdue' ||
+    (
+      record.status ===
+        'active' &&
+      new Date() >
+        record.dueAt
+    )
+  ) {
+    throw ApiError.badRequest(
+      'Overdue loans cannot be renewed'
+    );
+  }
+
   if (
     record.status !==
     'active'
@@ -675,6 +745,12 @@ const renew = async (
   const bookId =
     record.copy.bookId;
 
+  /*
+   * Existing rule:
+   *
+   * If somebody else is waiting for this title,
+   * the current borrower cannot extend the loan.
+   */
   if (
     await reservationService
       .hasWaitingReservations(
@@ -738,6 +814,7 @@ const listMyLoans = async (
               {
                 model:
                   Book,
+
                 as: 'book',
               },
             ],
@@ -808,6 +885,7 @@ const listAllRecords = async (
               {
                 model:
                   Book,
+
                 as: 'book',
               },
             ],
@@ -866,17 +944,6 @@ const listCopiesForBook =
     });
   };
 
-/*
- * Retire one physical copy.
- *
- * Current project behavior treats "lost" as
- * removed from active inventory.
- *
- * Therefore:
- *
- * totalCopies - 1
- * availableCopies - 1
- */
 const retireCopy = async (
   copyId
 ) => {
@@ -887,6 +954,7 @@ const retireCopy = async (
           copyId,
           {
             transaction: t,
+
             lock:
               t.LOCK.UPDATE,
           }
@@ -919,6 +987,7 @@ const retireCopy = async (
           copy.bookId,
           {
             transaction: t,
+
             lock:
               t.LOCK.UPDATE,
           }
