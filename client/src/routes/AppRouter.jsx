@@ -49,6 +49,9 @@ import AdminBookCopies
 import CirculationDesk
   from '../pages/CirculationDesk';
 
+import StaffLoans
+  from '../pages/StaffLoans';
+
 import ProtectedRoute
   from './ProtectedRoute';
 
@@ -168,6 +171,20 @@ export default function AppRouter() {
             ]}
           >
             <CirculationDesk />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/loans"
+        element={
+          <ProtectedRoute
+            roles={[
+              'admin',
+              'librarian',
+            ]}
+          >
+            <StaffLoans />
           </ProtectedRoute>
         }
       />
