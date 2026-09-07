@@ -22,6 +22,35 @@ const searchMembersSchema =
     }),
   });
 
+const memberIdSchema =
+  z.object({
+    params: z.object({
+      id: z
+        .string()
+        .uuid(),
+    }),
+  });
+
+const updateMembershipStatusSchema =
+  z.object({
+    params: z.object({
+      id: z
+        .string()
+        .uuid(),
+    }),
+
+    body: z.object({
+      membershipStatus:
+        z.enum([
+          'active',
+          'suspended',
+          'expired',
+        ]),
+    }),
+  });
+
 module.exports = {
   searchMembersSchema,
+  memberIdSchema,
+  updateMembershipStatusSchema,
 };

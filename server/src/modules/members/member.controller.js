@@ -9,7 +9,10 @@ const memberService =
 
 const searchMembers =
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
       const members =
         await memberService
           .searchMembers(
@@ -24,6 +27,50 @@ const searchMembers =
     }
   );
 
+const getMember =
+  asyncHandler(
+    async (
+      req,
+      res
+    ) => {
+      const result =
+        await memberService
+          .getMemberById(
+            req.params.id
+          );
+
+      return new ApiResponse(
+        200,
+        result,
+        'Member retrieved successfully'
+      ).send(res);
+    }
+  );
+
+const updateMembershipStatus =
+  asyncHandler(
+    async (
+      req,
+      res
+    ) => {
+      const member =
+        await memberService
+          .updateMembershipStatus(
+            req.params.id,
+            req.body
+              .membershipStatus
+          );
+
+      return new ApiResponse(
+        200,
+        member,
+        'Membership status updated successfully'
+      ).send(res);
+    }
+  );
+
 module.exports = {
   searchMembers,
+  getMember,
+  updateMembershipStatus,
 };

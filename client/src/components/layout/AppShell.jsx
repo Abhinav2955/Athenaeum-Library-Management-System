@@ -15,9 +15,10 @@ import NotificationBell
 const navLinkClass = ({
   isActive,
 }) =>
-  `rounded-card px-3 py-2 text-sm font-medium transition-colors ${isActive
-    ? 'bg-brass-light text-brass-dark'
-    : 'text-ink-muted hover:bg-paper hover:text-ink'
+  `rounded-card px-3 py-2 text-sm font-medium transition-colors ${
+    isActive
+      ? 'bg-brass-light text-brass-dark'
+      : 'text-ink-muted hover:bg-paper hover:text-ink'
   }`;
 
 export default function AppShell({
@@ -38,7 +39,7 @@ export default function AppShell({
 
   return (
     <div className="flex min-h-screen bg-paper">
-      <aside className="hidden w-56 flex-col border-r border-hairline bg-white px-4 py-6 sm:flex">
+      <aside className="hidden w-64 flex-col border-r border-hairline bg-white px-4 py-6 sm:flex">
         <p className="px-3 font-mono text-xs uppercase tracking-[0.2em] text-brass">
           Athenaeum
         </p>
@@ -125,6 +126,7 @@ export default function AppShell({
               >
                 Loan Management
               </NavLink>
+
               <NavLink
                 to="/admin/reservations"
                 className={
@@ -132,6 +134,15 @@ export default function AppShell({
                 }
               >
                 Reservation Management
+              </NavLink>
+
+              <NavLink
+                to="/admin/members"
+                className={
+                  navLinkClass
+                }
+              >
+                Member Management
               </NavLink>
 
               <NavLink

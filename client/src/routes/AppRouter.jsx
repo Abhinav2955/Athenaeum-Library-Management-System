@@ -55,6 +55,9 @@ import StaffLoans
 import StaffReservations
   from '../pages/StaffReservations';
 
+import StaffMembers
+  from '../pages/StaffMembers';
+
 import ProtectedRoute
   from './ProtectedRoute';
 
@@ -192,6 +195,20 @@ export default function AppRouter() {
             ]}
           >
             <StaffReservations />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/members"
+        element={
+          <ProtectedRoute
+            roles={[
+              'admin',
+              'librarian',
+            ]}
+          >
+            <StaffMembers />
           </ProtectedRoute>
         }
       />

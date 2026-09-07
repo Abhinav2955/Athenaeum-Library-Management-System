@@ -63,7 +63,6 @@ router.use(
   notificationRoutes
 );
 
-
 router.use(
   '/members',
   memberRoutes
