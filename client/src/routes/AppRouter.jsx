@@ -52,6 +52,9 @@ import CirculationDesk
 import StaffLoans
   from '../pages/StaffLoans';
 
+import StaffReservations
+  from '../pages/StaffReservations';
+
 import ProtectedRoute
   from './ProtectedRoute';
 
@@ -60,37 +63,27 @@ export default function AppRouter() {
     <Routes>
       <Route
         path="/login"
-        element={
-          <Login />
-        }
+        element={<Login />}
       />
 
       <Route
         path="/register"
-        element={
-          <Register />
-        }
+        element={<Register />}
       />
 
       <Route
         path="/verify-email"
-        element={
-          <VerifyEmail />
-        }
+        element={<VerifyEmail />}
       />
 
       <Route
         path="/forgot-password"
-        element={
-          <ForgotPassword />
-        }
+        element={<ForgotPassword />}
       />
 
       <Route
         path="/reset-password"
-        element={
-          <ResetPassword />
-        }
+        element={<ResetPassword />}
       />
 
       <Route
@@ -185,6 +178,20 @@ export default function AppRouter() {
             ]}
           >
             <StaffLoans />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/reservations"
+        element={
+          <ProtectedRoute
+            roles={[
+              'admin',
+              'librarian',
+            ]}
+          >
+            <StaffReservations />
           </ProtectedRoute>
         }
       />

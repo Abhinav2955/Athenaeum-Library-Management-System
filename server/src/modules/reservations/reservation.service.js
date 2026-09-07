@@ -4,6 +4,7 @@ const {
   Reservation,
   Book,
   BookCopy,
+  User,
   sequelize,
 } = require('../../database/models');
 
@@ -20,15 +21,18 @@ const notificationService =
 
 const HOLD_DURATION_HOURS = 48;
 
-const addHours = (
-  date,
-  hours
-) =>
+const addHours = (date, hours) =>
   new Date(
     date.getTime() +
       hours * 3600000
   );
 
+/*
+ * Create a reservation.
+ *
+ * Reservations are for books that currently
+ * have no generally available physical copy.
+ */
 const createReservation = async (
   userId,
   bookId
@@ -41,6 +45,20 @@ const createReservation = async (
   if (!book) {
     throw ApiError.notFound(
       'Book not found'
+    );
+  }
+
+  /*
+   * Part 5:
+   *
+   * Do not allow a member to join a waiting
+   * queue while copies are already available.
+   */
+  if (
+    book.availableCopies > 0
+  ) {
+    throw ApiError.badRequest(
+      'This book is currently available and does not need a reservation'
     );
   }
 
@@ -76,13 +94,13 @@ const createReservation = async (
 };
 
 /*
- * Called whenever a physical copy becomes free.
+ * Called when a physical copy becomes free.
  *
- * If somebody is waiting:
+ * If somebody is waiting, the same physical copy
+ * goes directly to the first member in the queue.
  *
- * borrowed/reserved -> reserved
- *
- * The copy remains outside general availability.
+ * availableCopies does NOT increase because the
+ * copy never returns to general availability.
  */
 const tryFulfillNextReservation =
   async (
@@ -193,24 +211,16 @@ const hasWaitingReservations =
   };
 
 /*
- * Cancel reservation.
+ * Cancel waiting / ready reservation.
  *
- * Important cases:
+ * READY cancellation:
  *
- * WAITING:
- * no physical copy is attached.
+ * another member waiting
+ * reserved -> reserved
  *
- * READY:
- * a physical copy is reserved.
- *
- * If another member is waiting, transfer the same
- * copy directly to that member.
- *
- * Otherwise:
- *
+ * nobody waiting
  * reserved -> available
- *
- * and availableCopies increases.
+ * availableCopies + 1
  */
 const cancelReservation =
   async (
@@ -275,10 +285,6 @@ const cancelReservation =
           transaction: t,
         });
 
-        /*
-         * Waiting reservations don't own a copy,
-         * so there is nothing else to release.
-         */
         if (
           wasReady &&
           reservation.copyId
@@ -299,10 +305,6 @@ const cancelReservation =
             copy.reservedForUserId =
               null;
 
-            /*
-             * Try transferring this physical copy
-             * directly to the next person.
-             */
             const fulfilled =
               await tryFulfillNextReservation(
                 reservation.bookId,
@@ -310,11 +312,6 @@ const cancelReservation =
                 t
               );
 
-            /*
-             * Nobody else is waiting.
-             *
-             * reserved -> available
-             */
             if (!fulfilled) {
               copy.status =
                 'available';
@@ -356,6 +353,9 @@ const cancelReservation =
     );
   };
 
+/*
+ * Member reservation history with queue position.
+ */
 const listMyReservations =
   async (
     userId,
@@ -382,7 +382,22 @@ const listMyReservations =
             {
               model:
                 Book,
+
               as: 'book',
+            },
+
+            {
+              model:
+                BookCopy,
+
+              as: 'heldCopy',
+
+              attributes: [
+                'id',
+                'barcode',
+                'shelfLocation',
+                'status',
+              ],
             },
           ],
 
@@ -407,6 +422,7 @@ const listMyReservations =
             ) {
               return {
                 ...reservation.toJSON(),
+
                 queuePosition:
                   null,
               };
@@ -451,6 +467,14 @@ const listMyReservations =
     };
   };
 
+/*
+ * Staff reservation list.
+ *
+ * Part 5 adds:
+ * - member details
+ * - held copy/barcode
+ * - queue position
+ */
 const listAllReservations =
   async (query) => {
     const {
@@ -484,7 +508,37 @@ const listAllReservations =
             {
               model:
                 Book,
+
               as: 'book',
+            },
+
+            {
+              model:
+                User,
+
+              as: 'member',
+
+              attributes: [
+                'id',
+                'name',
+                'email',
+                'phone',
+                'membershipStatus',
+              ],
+            },
+
+            {
+              model:
+                BookCopy,
+
+              as: 'heldCopy',
+
+              attributes: [
+                'id',
+                'barcode',
+                'shelfLocation',
+                'status',
+              ],
             },
           ],
 
@@ -497,10 +551,55 @@ const listAllReservations =
 
           limit,
           offset,
+
+          distinct: true,
         });
 
+    const withPosition =
+      await Promise.all(
+        rows.map(
+          async (reservation) => {
+            if (
+              reservation.status !==
+              'waiting'
+            ) {
+              return {
+                ...reservation.toJSON(),
+
+                queuePosition:
+                  null,
+              };
+            }
+
+            const ahead =
+              await Reservation.count({
+                where: {
+                  bookId:
+                    reservation.bookId,
+
+                  status:
+                    'waiting',
+
+                  requestedAt: {
+                    [Op.lt]:
+                      reservation.requestedAt,
+                  },
+                },
+              });
+
+            return {
+              ...reservation.toJSON(),
+
+              queuePosition:
+                ahead + 1,
+            };
+          }
+        )
+      );
+
     return {
-      reservations: rows,
+      reservations:
+        withPosition,
 
       meta:
         buildPaginationMeta({
@@ -512,23 +611,7 @@ const listAllReservations =
   };
 
 /*
- * Expire ready reservations whose pickup window
- * has passed.
- *
- * Important inventory behavior:
- *
- * If another member is waiting:
- *
- * reserved -> reserved
- *
- * availableCopies unchanged.
- *
- *
- * If nobody is waiting:
- *
- * reserved -> available
- *
- * availableCopies + 1.
+ * Expire ready pickup holds.
  */
 const expireStaleHolds =
   async () => {
@@ -553,13 +636,6 @@ const expireStaleHolds =
     ) {
       await sequelize.transaction(
         async (t) => {
-          /*
-           * Reload + lock inside the transaction.
-           *
-           * This protects against another request
-           * fulfilling/cancelling the reservation
-           * between the first query and now.
-           */
           const reservation =
             await Reservation.findByPk(
               candidate.id,
@@ -625,10 +701,6 @@ const expireStaleHolds =
           copy.reservedForUserId =
             null;
 
-          /*
-           * Give it directly to the next waiting
-           * member if one exists.
-           */
           const fulfilled =
             await tryFulfillNextReservation(
               reservation.bookId,
@@ -636,11 +708,6 @@ const expireStaleHolds =
               t
             );
 
-          /*
-           * Nobody waiting.
-           *
-           * reserved -> available
-           */
           if (!fulfilled) {
             copy.status =
               'available';

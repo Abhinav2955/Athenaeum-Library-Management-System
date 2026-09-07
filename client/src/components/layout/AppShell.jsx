@@ -15,10 +15,9 @@ import NotificationBell
 const navLinkClass = ({
   isActive,
 }) =>
-  `rounded-card px-3 py-2 text-sm font-medium transition-colors ${
-    isActive
-      ? 'bg-brass-light text-brass-dark'
-      : 'text-ink-muted hover:bg-paper hover:text-ink'
+  `rounded-card px-3 py-2 text-sm font-medium transition-colors ${isActive
+    ? 'bg-brass-light text-brass-dark'
+    : 'text-ink-muted hover:bg-paper hover:text-ink'
   }`;
 
 export default function AppShell({
@@ -125,6 +124,14 @@ export default function AppShell({
                 }
               >
                 Loan Management
+              </NavLink>
+              <NavLink
+                to="/admin/reservations"
+                className={
+                  navLinkClass
+                }
+              >
+                Reservation Management
               </NavLink>
 
               <NavLink
