@@ -58,6 +58,9 @@ import StaffReservations
 import StaffMembers
   from '../pages/StaffMembers';
 
+import StaffFines
+  from '../pages/StaffFines';
+
 import ProtectedRoute
   from './ProtectedRoute';
 
@@ -66,27 +69,37 @@ export default function AppRouter() {
     <Routes>
       <Route
         path="/login"
-        element={<Login />}
+        element={
+          <Login />
+        }
       />
 
       <Route
         path="/register"
-        element={<Register />}
+        element={
+          <Register />
+        }
       />
 
       <Route
         path="/verify-email"
-        element={<VerifyEmail />}
+        element={
+          <VerifyEmail />
+        }
       />
 
       <Route
         path="/forgot-password"
-        element={<ForgotPassword />}
+        element={
+          <ForgotPassword />
+        }
       />
 
       <Route
         path="/reset-password"
-        element={<ResetPassword />}
+        element={
+          <ResetPassword />
+        }
       />
 
       <Route
@@ -209,6 +222,20 @@ export default function AppRouter() {
             ]}
           >
             <StaffMembers />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/fines"
+        element={
+          <ProtectedRoute
+            roles={[
+              'admin',
+              'librarian',
+            ]}
+          >
+            <StaffFines />
           </ProtectedRoute>
         }
       />

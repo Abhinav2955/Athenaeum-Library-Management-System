@@ -146,6 +146,15 @@ export default function AppShell({
               </NavLink>
 
               <NavLink
+                to="/admin/fines"
+                className={
+                  navLinkClass
+                }
+              >
+                Fine Management
+              </NavLink>
+
+              <NavLink
                 to="/admin/books"
                 className={
                   navLinkClass
