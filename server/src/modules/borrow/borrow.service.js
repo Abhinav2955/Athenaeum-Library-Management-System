@@ -9,7 +9,8 @@ const {
   sequelize,
 } = require('../../database/models');
 
-const ApiError = require('../../utils/ApiError');
+const ApiError =
+  require('../../utils/ApiError');
 
 const {
   parsePagination,
@@ -35,14 +36,6 @@ const addDays = (date, days) =>
       days * 86400000
   );
 
-/*
- * Transaction-level membership check.
- *
- * Members whose membership is suspended or expired
- * may still be allowed to log in depending on the
- * authentication policy, but they cannot borrow or
- * renew books.
- */
 const assertActiveMembership = (user) => {
   if (
     user.membershipStatus !==
@@ -104,11 +97,8 @@ const addCopies = async ({
         copies.push(copy);
       }
 
-      book.totalCopies +=
-        quantity;
-
-      book.availableCopies +=
-        quantity;
+      book.totalCopies += quantity;
+      book.availableCopies += quantity;
 
       await book.save({
         transaction: t,
@@ -130,15 +120,9 @@ const checkout = async (
     userId ||
     requestingUser.id;
 
-  /*
-   * Members can borrow only for themselves.
-   *
-   * Staff can perform checkout for another member.
-   */
   if (
     userId &&
-    userId !==
-      requestingUser.id &&
+    userId !== requestingUser.id &&
     ![
       'admin',
       'librarian',
@@ -167,35 +151,14 @@ const checkout = async (
         );
       }
 
-      /*
-       * Part 2:
-       *
-       * Suspended / expired / otherwise inactive
-       * membership cannot perform circulation.
-       */
       assertActiveMembership(
         borrower
       );
 
-      /*
-       * Part 2:
-       *
-       * Do NOT rely only on the hourly overdue job.
-       *
-       * A loan is overdue if:
-       *
-       * status === overdue
-       *
-       * OR
-       *
-       * status is still active but dueAt has already
-       * passed.
-       */
       const overdueLoan =
         await BorrowRecord.findOne({
           where: {
-            userId:
-              borrowerId,
+            userId: borrowerId,
 
             [Op.or]: [
               {
@@ -227,8 +190,7 @@ const checkout = async (
       const activeLoanCount =
         await BorrowRecord.count({
           where: {
-            userId:
-              borrowerId,
+            userId: borrowerId,
 
             status: {
               [Op.in]: [
@@ -250,19 +212,11 @@ const checkout = async (
         );
       }
 
-      /*
-       * Existing fine restriction remains active.
-       */
       await fineService
         .assertCheckoutNotBlocked(
           borrowerId
         );
 
-      /*
-       * Prevent borrowing another physical copy
-       * of the same title while one is already
-       * checked out.
-       */
       const alreadyHasThisBook =
         await BorrowRecord.findOne({
           where: {
@@ -303,10 +257,6 @@ const checkout = async (
         );
       }
 
-      /*
-       * Prefer an already-reserved physical copy
-       * for this member.
-       */
       const readyReservation =
         await Reservation.findOne({
           where: {
@@ -359,22 +309,15 @@ const checkout = async (
           readyReservation.status =
             'fulfilled';
 
-          await readyReservation.save(
-            {
-              transaction:
-                t,
-            }
-          );
+          await readyReservation.save({
+            transaction: t,
+          });
 
           copy.reservedForUserId =
             null;
         }
       }
 
-      /*
-       * If no reservation copy exists, obtain a
-       * normally available physical copy.
-       */
       if (!copy) {
         copy =
           await BookCopy.findOne({
@@ -412,19 +355,11 @@ const checkout = async (
           bookId,
           {
             transaction: t,
-
             lock:
               t.LOCK.UPDATE,
           }
         );
 
-      /*
-       * Part 1 inventory rule:
-       *
-       * reserved -> borrowed
-       *
-       * does not decrease availability again.
-       */
       if (
         !checkedOutFromReservation
       ) {
@@ -443,40 +378,40 @@ const checkout = async (
       const now =
         new Date();
 
-      const record =
-        await BorrowRecord.create(
-          {
-            copyId:
-              copy.id,
+      return BorrowRecord.create(
+        {
+          copyId:
+            copy.id,
 
-            userId:
-              borrowerId,
+          userId:
+            borrowerId,
 
-            borrowedAt:
+          borrowedAt:
+            now,
+
+          dueAt:
+            addDays(
               now,
+              LOAN_PERIOD_DAYS
+            ),
 
-            dueAt:
-              addDays(
-                now,
-                LOAN_PERIOD_DAYS
-              ),
+          status:
+            'active',
+        },
 
-            status:
-              'active',
-          },
-
-          {
-            transaction: t,
-          }
-        );
-
-      return record;
+        {
+          transaction: t,
+        }
+      );
     }
   );
 };
 
 const returnBook = async (
-  recordId
+  recordId,
+  {
+    condition = 'good',
+  } = {}
 ) => {
   return sequelize.transaction(
     async (t) => {
@@ -507,11 +442,15 @@ const returnBook = async (
       }
 
       if (
-        record.status ===
-        'returned'
+        ![
+          'active',
+          'overdue',
+        ].includes(
+          record.status
+        )
       ) {
         throw ApiError.badRequest(
-          'This item was already returned'
+          'Only active or overdue loans can be returned'
         );
       }
 
@@ -532,47 +471,62 @@ const returnBook = async (
         transaction: t,
       });
 
-      const fulfilled =
-        await reservationService
-          .tryFulfillNextReservation(
-            record.copy.bookId,
-            record.copy,
-            t
-          );
-
-      if (!fulfilled) {
-        record.copy.status =
-          'available';
-
-        await record.copy.save(
-          {
-            transaction: t,
-          }
-        );
-      }
-
       const book =
         await Book.findByPk(
           record.copy.bookId,
           {
             transaction: t,
-
             lock:
               t.LOCK.UPDATE,
           }
         );
 
-      if (!fulfilled) {
-        book.availableCopies =
-          Math.min(
-            book.totalCopies,
-            book.availableCopies +
-              1
-          );
+      let fulfilled = false;
 
-        await book.save({
+      if (
+        condition ===
+        'damaged'
+      ) {
+        record.copy.status =
+          'damaged';
+
+        record.copy.reservedForUserId =
+          null;
+
+        await record.copy.save({
           transaction: t,
         });
+      } else {
+        fulfilled =
+          await reservationService
+            .tryFulfillNextReservation(
+              record.copy.bookId,
+              record.copy,
+              t
+            );
+
+        if (!fulfilled) {
+          record.copy.status =
+            'available';
+
+          record.copy.reservedForUserId =
+            null;
+
+          await record.copy.save({
+            transaction: t,
+          });
+
+          book.availableCopies =
+            Math.min(
+              book.totalCopies,
+              book.availableCopies +
+                1
+            );
+
+          await book.save({
+            transaction: t,
+          });
+        }
       }
 
       if (wasOverdue) {
@@ -606,7 +560,102 @@ const returnBook = async (
       return {
         record,
         wasOverdue,
+        condition,
+        fulfilled,
       };
+    }
+  );
+};
+
+const markLoanLost = async (
+  recordId
+) => {
+  return sequelize.transaction(
+    async (t) => {
+      const record =
+        await BorrowRecord.findByPk(
+          recordId,
+          {
+            include: [
+              {
+                model:
+                  BookCopy,
+
+                as: 'copy',
+              },
+            ],
+
+            transaction: t,
+
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      if (!record) {
+        throw ApiError.notFound(
+          'Borrow record not found'
+        );
+      }
+
+      if (
+        ![
+          'active',
+          'overdue',
+        ].includes(
+          record.status
+        )
+      ) {
+        throw ApiError.badRequest(
+          'Only an active or overdue loan can be marked lost'
+        );
+      }
+
+      if (!record.copy) {
+        throw ApiError.notFound(
+          'Physical copy not found'
+        );
+      }
+
+      record.status =
+        'lost';
+
+      await record.save({
+        transaction: t,
+      });
+
+      record.copy.status =
+        'lost';
+
+      record.copy.reservedForUserId =
+        null;
+
+      await record.copy.save({
+        transaction: t,
+      });
+
+      const book =
+        await Book.findByPk(
+          record.copy.bookId,
+          {
+            transaction: t,
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      book.totalCopies =
+        Math.max(
+          book.availableCopies,
+          book.totalCopies -
+            1
+        );
+
+      await book.save({
+        transaction: t,
+      });
+
+      return record;
     }
   );
 };
@@ -615,11 +664,6 @@ const renew = async (
   recordId,
   requestingUser
 ) => {
-  /*
-   * Load borrower as well as physical copy because
-   * renewal must validate the MEMBER whose loan
-   * is being renewed.
-   */
   const record =
     await BorrowRecord.findByPk(
       recordId,
@@ -670,16 +714,9 @@ const renew = async (
     );
   }
 
-  /*
-   * Part 2:
-   *
-   * Renewal belongs to the borrower.
-   *
-   * Even if an administrator performs the action,
-   * a suspended or expired member should not receive
-   * an extension.
-   */
-  if (record.borrower) {
+  if (
+    record.borrower
+  ) {
     assertActiveMembership(
       record.borrower
     );
@@ -700,15 +737,6 @@ const renew = async (
     );
   }
 
-  /*
-   * Part 2 critical fix:
-   *
-   * The scheduler may not yet have changed
-   *
-   * active -> overdue.
-   *
-   * dueAt itself is the authoritative deadline.
-   */
   if (
     record.status ===
       'overdue' ||
@@ -745,12 +773,6 @@ const renew = async (
   const bookId =
     record.copy.bookId;
 
-  /*
-   * Existing rule:
-   *
-   * If somebody else is waiting for this title,
-   * the current borrower cannot extend the loan.
-   */
   if (
     await reservationService
       .hasWaitingReservations(
@@ -790,7 +812,9 @@ const listMyLoans = async (
     userId,
   };
 
-  if (query.status) {
+  if (
+    query.status
+  ) {
     where.status =
       query.status;
   }
@@ -839,7 +863,8 @@ const listMyLoans = async (
       buildPaginationMeta({
         page,
         limit,
-        total: count,
+        total:
+          count,
       }),
   };
 };
@@ -856,12 +881,16 @@ const listAllRecords = async (
 
   const where = {};
 
-  if (query.status) {
+  if (
+    query.status
+  ) {
     where.status =
       query.status;
   }
 
-  if (query.userId) {
+  if (
+    query.userId
+  ) {
     where.userId =
       query.userId;
   }
@@ -923,7 +952,8 @@ const listAllRecords = async (
       buildPaginationMeta({
         page,
         limit,
-        total: count,
+        total:
+          count,
       }),
   };
 };
@@ -944,6 +974,226 @@ const listCopiesForBook =
     });
   };
 
+/*
+ * PART 8.1
+ *
+ * If a damaged / under-repair copy becomes usable
+ * again, first check the reservation queue.
+ *
+ * If someone is waiting:
+ *
+ * damaged/under_repair -> reserved
+ *
+ * availableCopies stays unchanged.
+ *
+ *
+ * If nobody is waiting:
+ *
+ * damaged/under_repair -> available
+ *
+ * availableCopies + 1.
+ */
+const updateCopyStatus = async (
+  copyId,
+  nextStatus
+) => {
+  return sequelize.transaction(
+    async (t) => {
+      const copy =
+        await BookCopy.findByPk(
+          copyId,
+          {
+            transaction: t,
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      if (!copy) {
+        throw ApiError.notFound(
+          'Copy not found'
+        );
+      }
+
+      if (
+        [
+          'borrowed',
+          'reserved',
+          'lost',
+        ].includes(
+          copy.status
+        )
+      ) {
+        throw ApiError.badRequest(
+          `A ${copy.status} copy cannot be moved through the repair workflow`
+        );
+      }
+
+      const allowedTransitions = {
+        available: [
+          'damaged',
+        ],
+
+        damaged: [
+          'under_repair',
+          'available',
+        ],
+
+        under_repair: [
+          'damaged',
+          'available',
+        ],
+      };
+
+      const allowed =
+        allowedTransitions[
+          copy.status
+        ] || [];
+
+      if (
+        !allowed.includes(
+          nextStatus
+        )
+      ) {
+        throw ApiError.badRequest(
+          `Cannot change copy status from ${copy.status} to ${nextStatus}`
+        );
+      }
+
+      const oldStatus =
+        copy.status;
+
+      const book =
+        await Book.findByPk(
+          copy.bookId,
+          {
+            transaction: t,
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      /*
+       * AVAILABLE -> DAMAGED
+       *
+       * The copy leaves general circulation.
+       */
+      if (
+        oldStatus ===
+          'available' &&
+        nextStatus ===
+          'damaged'
+      ) {
+        copy.status =
+          'damaged';
+
+        await copy.save({
+          transaction: t,
+        });
+
+        book.availableCopies =
+          Math.max(
+            0,
+            book.availableCopies -
+              1
+          );
+
+        await book.save({
+          transaction: t,
+        });
+
+        return copy;
+      }
+
+      /*
+       * DAMAGED -> UNDER_REPAIR
+       *
+       * or
+       *
+       * UNDER_REPAIR -> DAMAGED
+       *
+       * Neither state is available for circulation,
+       * so inventory counters do not change.
+       */
+      if (
+        nextStatus !==
+        'available'
+      ) {
+        copy.status =
+          nextStatus;
+
+        await copy.save({
+          transaction: t,
+        });
+
+        return copy;
+      }
+
+      /*
+       * PART 8.1 FIX
+       *
+       * We are trying to return a repaired/damaged
+       * copy to usable circulation.
+       *
+       * Before making it generally available,
+       * offer it to the oldest waiting reservation.
+       */
+      const fulfilled =
+        await reservationService
+          .tryFulfillNextReservation(
+            copy.bookId,
+            copy,
+            t
+          );
+
+      /*
+       * Someone was waiting.
+       *
+       * tryFulfillNextReservation() already changed:
+       *
+       * copy.status = reserved
+       * reservedForUserId = member
+       * reservation.status = ready
+       *
+       * Therefore availableCopies must remain
+       * unchanged.
+       */
+      if (fulfilled) {
+        return copy;
+      }
+
+      /*
+       * Nobody is waiting.
+       *
+       * Copy can finally return to general
+       * availability.
+       */
+      copy.status =
+        'available';
+
+      copy.reservedForUserId =
+        null;
+
+      await copy.save({
+        transaction: t,
+      });
+
+      book.availableCopies =
+        Math.min(
+          book.totalCopies,
+          book.availableCopies +
+            1
+        );
+
+      await book.save({
+        transaction: t,
+      });
+
+      return copy;
+    }
+  );
+};
+
 const retireCopy = async (
   copyId
 ) => {
@@ -954,7 +1204,6 @@ const retireCopy = async (
           copyId,
           {
             transaction: t,
-
             lock:
               t.LOCK.UPDATE,
           }
@@ -987,7 +1236,6 @@ const retireCopy = async (
           copy.bookId,
           {
             transaction: t,
-
             lock:
               t.LOCK.UPDATE,
           }
@@ -1019,9 +1267,11 @@ const retireCopy = async (
 module.exports = {
   addCopies,
   listCopiesForBook,
+  updateCopyStatus,
   retireCopy,
   checkout,
   returnBook,
+  markLoanLost,
   renew,
   listMyLoans,
   listAllRecords,
