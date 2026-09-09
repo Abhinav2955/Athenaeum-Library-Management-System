@@ -18,6 +18,7 @@ import {
   listAllLoans,
   renewLoan,
   returnLoan,
+  markLoanLost,
 } from '../api/borrow.api';
 
 const STATUS_TABS = [
@@ -46,17 +47,12 @@ const STATUS_TABS = [
 const getEffectiveStatus = (
   loan
 ) => {
-  /*
-   * Part 2 made dueAt authoritative.
-   *
-   * The cron job might not yet have changed
-   * active -> overdue, so the UI should also
-   * recognize an active loan whose due date
-   * has already passed.
-   */
   if (
-    loan.status === 'active' &&
-    new Date(loan.dueAt) <
+    loan.status ===
+      'active' &&
+    new Date(
+      loan.dueAt
+    ) <
       new Date()
   ) {
     return 'overdue';
@@ -70,29 +66,19 @@ const getStatusClasses = (
 ) => {
   switch (status) {
     case 'active':
-      return (
-        'bg-paper text-ink'
-      );
+      return 'bg-paper text-ink';
 
     case 'overdue':
-      return (
-        'bg-status-dangerBg text-status-danger'
-      );
+      return 'bg-status-dangerBg text-status-danger';
 
     case 'returned':
-      return (
-        'bg-status-successBg text-status-success'
-      );
+      return 'bg-status-successBg text-status-success';
 
     case 'lost':
-      return (
-        'bg-status-dangerBg text-status-danger'
-      );
+      return 'bg-status-dangerBg text-status-danger';
 
     default:
-      return (
-        'bg-paper text-ink-muted'
-      );
+      return 'bg-paper text-ink-muted';
   }
 };
 
@@ -110,10 +96,10 @@ const formatDate = (
 
 const LoanCard = ({
   loan,
-  renewingLoanId,
-  returningLoanId,
+  workingLoanId,
   onRenew,
   onReturn,
+  onLost,
 }) => {
   const status =
     getEffectiveStatus(
@@ -126,6 +112,14 @@ const LoanCard = ({
   const borrower =
     loan.borrower;
 
+  const actionable =
+    [
+      'active',
+      'overdue',
+    ].includes(
+      status
+    );
+
   return (
     <div className="rounded-card border border-hairline bg-white p-5">
       <div className="flex flex-col justify-between gap-5 lg:flex-row">
@@ -137,7 +131,7 @@ const LoanCard = ({
             </h3>
 
             <span
-              className={`rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${getStatusClasses(
+              className={`rounded-full px-2 py-1 font-mono text-[10px] uppercase ${getStatusClasses(
                 status
               )}`}
             >
@@ -147,23 +141,23 @@ const LoanCard = ({
 
           <div className="mt-4 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 Member
               </p>
 
               <p className="mt-1 text-ink">
                 {borrower?.name ||
-                  'Unknown Member'}
+                  'Unknown'}
               </p>
 
-              <p className="mt-0.5 text-xs text-ink-muted">
+              <p className="mt-1 text-xs text-ink-muted">
                 {borrower?.email ||
                   '—'}
               </p>
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 ISBN
               </p>
 
@@ -174,19 +168,18 @@ const LoanCard = ({
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
-                Copy Barcode
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
+                Barcode
               </p>
 
               <p className="mt-1 font-mono text-xs text-ink">
-                {loan.copy
-                  ?.barcode ||
+                {loan.copy?.barcode ||
                   '—'}
               </p>
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 Borrowed
               </p>
 
@@ -198,7 +191,7 @@ const LoanCard = ({
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 Due
               </p>
 
@@ -217,7 +210,7 @@ const LoanCard = ({
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 Returned
               </p>
 
@@ -229,7 +222,7 @@ const LoanCard = ({
             </div>
 
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
                 Renewals
               </p>
 
@@ -239,47 +232,102 @@ const LoanCard = ({
                 / 2
               </p>
             </div>
+
+            <div>
+              <p className="font-mono text-[10px] uppercase text-ink-muted">
+                Copy Condition
+              </p>
+
+              <p className="mt-1 capitalize text-ink">
+                {loan.copy?.status
+                  ?.replace(
+                    '_',
+                    ' '
+                  ) ||
+                  '—'}
+              </p>
+            </div>
           </div>
         </div>
 
-        {(status ===
-          'active' ||
-          status ===
-            'overdue') && (
-          <div className="flex shrink-0 flex-row gap-2 lg:flex-col">
+        {actionable && (
+          <div className="flex shrink-0 flex-wrap gap-2 lg:w-44 lg:flex-col">
             {status ===
               'active' && (
               <Button
                 variant="secondary"
                 disabled={
-                  renewingLoanId ===
+                  workingLoanId ===
                   loan.id
                 }
                 onClick={() =>
-                  onRenew(loan)
+                  onRenew(
+                    loan
+                  )
                 }
               >
-                {renewingLoanId ===
-                loan.id
-                  ? 'Renewing…'
-                  : 'Renew'}
+                Renew
               </Button>
             )}
 
             <Button
               variant="brass"
               disabled={
-                returningLoanId ===
+                workingLoanId ===
                 loan.id
               }
               onClick={() =>
-                onReturn(loan)
+                onReturn(
+                  loan,
+                  'good'
+                )
               }
             >
-              {returningLoanId ===
-              loan.id
-                ? 'Returning…'
-                : 'Return'}
+              Return Good
+            </Button>
+
+            <Button
+              variant="secondary"
+              disabled={
+                workingLoanId ===
+                loan.id
+              }
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Return this physical copy as damaged? It will be removed from available circulation.'
+                  )
+                ) {
+                  onReturn(
+                    loan,
+                    'damaged'
+                  );
+                }
+              }}
+            >
+              Return Damaged
+            </Button>
+
+            <Button
+              variant="secondary"
+              className="text-status-danger"
+              disabled={
+                workingLoanId ===
+                loan.id
+              }
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Mark this checked-out book as lost? The physical copy will be removed from active inventory.'
+                  )
+                ) {
+                  onLost(
+                    loan
+                  );
+                }
+              }}
+            >
+              Mark Lost
             </Button>
           </div>
         )}
@@ -320,13 +368,8 @@ export default function StaffLoans() {
   ] = useState('');
 
   const [
-    renewingLoanId,
-    setRenewingLoanId,
-  ] = useState(null);
-
-  const [
-    returningLoanId,
-    setReturningLoanId,
+    workingLoanId,
+    setWorkingLoanId,
   ] = useState(null);
 
   const loadLoans =
@@ -336,16 +379,6 @@ export default function StaffLoans() {
         setError('');
 
         try {
-          /*
-           * The existing backend endpoint accepts
-           * one status at a time.
-           *
-           * For "All", fetch each relevant status
-           * and combine the results.
-           *
-           * Part 4 intentionally does not alter
-           * the already-green backend service.
-           */
           if (
             activeTab ===
             'all'
@@ -396,16 +429,11 @@ export default function StaffLoans() {
                 []),
             ];
 
-            /*
-             * Defensive duplicate removal.
-             */
             const unique =
               Array.from(
                 new Map(
                   combined.map(
-                    (
-                      loan
-                    ) => [
+                    (loan) => [
                       loan.id,
                       loan,
                     ]
@@ -447,9 +475,7 @@ export default function StaffLoans() {
               'Could not load loan records.'
           );
         } finally {
-          setLoading(
-            false
-          );
+          setLoading(false);
         }
       },
       [activeTab]
@@ -473,23 +499,12 @@ export default function StaffLoans() {
       return loans.filter(
         (loan) => {
           const values = [
-            loan.borrower
-              ?.name,
-
-            loan.borrower
-              ?.email,
-
-            loan.copy
-              ?.book
-              ?.title,
-
-            loan.copy
-              ?.book
-              ?.isbn,
-
-            loan.copy
-              ?.barcode,
-
+            loan.borrower?.name,
+            loan.borrower?.email,
+            loan.copy?.book?.title,
+            loan.copy?.book?.isbn,
+            loan.copy?.barcode,
+            loan.copy?.status,
             getEffectiveStatus(
               loan
             ),
@@ -517,7 +532,7 @@ export default function StaffLoans() {
       setError('');
       setSuccess('');
 
-      setRenewingLoanId(
+      setWorkingLoanId(
         loan.id
       );
 
@@ -528,7 +543,7 @@ export default function StaffLoans() {
           );
 
         setSuccess(
-          `"${loan.copy?.book?.title || 'Book'}" renewed successfully. New due date: ${formatDate(
+          `"${loan.copy?.book?.title || 'Book'}" renewed. New due date: ${formatDate(
             updated.dueAt
           )}.`
         );
@@ -541,29 +556,33 @@ export default function StaffLoans() {
             'Could not renew this loan.'
         );
       } finally {
-        setRenewingLoanId(
+        setWorkingLoanId(
           null
         );
       }
     };
 
   const handleReturn =
-    async (loan) => {
+    async (
+      loan,
+      condition
+    ) => {
       setError('');
       setSuccess('');
 
-      setReturningLoanId(
+      setWorkingLoanId(
         loan.id
       );
 
       try {
         const result =
           await returnLoan(
-            loan.id
+            loan.id,
+            condition
           );
 
         setSuccess(
-          `"${loan.copy?.book?.title || 'Book'}": ${result.message}`
+          result.message
         );
 
         await loadLoans();
@@ -574,7 +593,39 @@ export default function StaffLoans() {
             'Could not return this loan.'
         );
       } finally {
-        setReturningLoanId(
+        setWorkingLoanId(
+          null
+        );
+      }
+    };
+
+  const handleLost =
+    async (loan) => {
+      setError('');
+      setSuccess('');
+
+      setWorkingLoanId(
+        loan.id
+      );
+
+      try {
+        await markLoanLost(
+          loan.id
+        );
+
+        setSuccess(
+          `"${loan.copy?.book?.title || 'Book'}" marked as lost.`
+        );
+
+        await loadLoans();
+      } catch (err) {
+        setError(
+          err.response?.data
+            ?.message ||
+            'Could not mark this loan lost.'
+        );
+      } finally {
+        setWorkingLoanId(
           null
         );
       }
@@ -593,7 +644,7 @@ export default function StaffLoans() {
           </h1>
 
           <p className="mt-1 text-sm text-ink-muted">
-            Review current and historical circulation records.
+            Review circulation records and handle returns, damage and lost books.
           </p>
         </div>
 
@@ -610,7 +661,7 @@ export default function StaffLoans() {
         )}
 
         <div className="rounded-card border border-hairline bg-white">
-          <div className="border-b border-hairline p-4 sm:p-5">
+          <div className="border-b border-hairline p-5">
             <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
               <div className="flex flex-wrap gap-1">
                 {STATUS_TABS.map(
@@ -625,13 +676,10 @@ export default function StaffLoans() {
                           tab.key
                         );
 
-                        setSuccess(
-                          ''
-                        );
-
+                        setSuccess('');
                         setError('');
                       }}
-                      className={`rounded-card px-3 py-2 text-sm font-medium transition-colors ${
+                      className={`rounded-card px-3 py-2 text-sm font-medium ${
                         activeTab ===
                         tab.key
                           ? 'bg-brass-light text-brass-dark'
@@ -648,7 +696,9 @@ export default function StaffLoans() {
                 <Input
                   id="loan-search"
                   label="Search records"
-                  value={search}
+                  value={
+                    search
+                  }
                   onChange={(
                     event
                   ) =>
@@ -663,32 +713,16 @@ export default function StaffLoans() {
             </div>
           </div>
 
-          <div className="border-b border-hairline px-5 py-3">
-            <p className="font-mono text-xs text-ink-muted">
-              Showing{' '}
-              {
-                filteredLoans.length
-              }{' '}
-              record
-              {filteredLoans.length ===
-              1
-                ? ''
-                : 's'}
-            </p>
-          </div>
-
-          <div className="p-4 sm:p-5">
+          <div className="p-5">
             {loading ? (
               <p className="font-mono text-sm text-ink-muted">
                 Loading loans…
               </p>
             ) : filteredLoans.length ===
               0 ? (
-              <div className="rounded-card bg-paper p-6 text-center">
-                <p className="text-sm text-ink-muted">
-                  No matching loan records found.
-                </p>
-              </div>
+              <p className="rounded-card bg-paper p-6 text-sm text-ink-muted">
+                No matching loan records found.
+              </p>
             ) : (
               <div className="space-y-3">
                 {filteredLoans.map(
@@ -700,17 +734,17 @@ export default function StaffLoans() {
                       loan={
                         loan
                       }
-                      renewingLoanId={
-                        renewingLoanId
-                      }
-                      returningLoanId={
-                        returningLoanId
+                      workingLoanId={
+                        workingLoanId
                       }
                       onRenew={
                         handleRenew
                       }
                       onReturn={
                         handleReturn
+                      }
+                      onLost={
+                        handleLost
                       }
                     />
                   )

@@ -1,9 +1,6 @@
 import axiosClient
   from './axiosClient';
 
-/*
- * Member self-checkout.
- */
 export const checkoutBook =
   async (bookId) => {
     const res =
@@ -17,12 +14,6 @@ export const checkoutBook =
     return res.data.data;
   };
 
-/*
- * Librarian / admin checkout.
- *
- * Existing backend checkout already supports
- * userId for staff.
- */
 export const staffCheckoutBook =
   async ({
     bookId,
@@ -41,23 +32,52 @@ export const staffCheckoutBook =
   };
 
 /*
- * Staff return operation.
+ * condition:
+ *
+ * good
+ * damaged
  */
 export const returnLoan =
-  async (recordId) => {
+  async (
+    recordId,
+    condition = 'good'
+  ) => {
     const res =
       await axiosClient.post(
-        `/borrow/${recordId}/return`
+        `/borrow/${recordId}/return`,
+        {
+          condition,
+        }
       );
 
     return {
-      data: res.data.data,
-      message: res.data.message,
+      data:
+        res.data.data,
+
+      message:
+        res.data.message,
     };
   };
 
+/*
+ * Staff reports a checked-out book as lost.
+ */
+export const markLoanLost =
+  async (
+    recordId
+  ) => {
+    const res =
+      await axiosClient.post(
+        `/borrow/${recordId}/lost`
+      );
+
+    return res.data.data;
+  };
+
 export const renewLoan =
-  async (recordId) => {
+  async (
+    recordId
+  ) => {
     const res =
       await axiosClient.post(
         `/borrow/${recordId}/renew`
@@ -67,7 +87,9 @@ export const renewLoan =
   };
 
 export const listMyLoans =
-  async (params = {}) => {
+  async (
+    params = {}
+  ) => {
     const res =
       await axiosClient.get(
         '/borrow/me',
@@ -79,17 +101,18 @@ export const listMyLoans =
     return res.data.data;
   };
 
-/*
- * Staff loan lookup.
- */
 export const listAllLoans =
-  async (params = {}) => {
+  async (
+    params = {}
+  ) => {
     const cleaned =
       Object.fromEntries(
         Object.entries(
           params
         ).filter(
-          ([, value]) =>
+          (
+            [, value]
+          ) =>
             value !== '' &&
             value !== undefined &&
             value !== null
@@ -108,9 +131,6 @@ export const listAllLoans =
     return res.data.data;
   };
 
-/*
- * Admin/librarian inventory management.
- */
 export const addCopies =
   async ({
     bookId,
@@ -131,7 +151,9 @@ export const addCopies =
   };
 
 export const listCopiesForBook =
-  async (bookId) => {
+  async (
+    bookId
+  ) => {
     const res =
       await axiosClient.get(
         '/borrow/copies',
@@ -145,8 +167,33 @@ export const listCopiesForBook =
     return res.data.data;
   };
 
+/*
+ * Repair lifecycle:
+ *
+ * available
+ * damaged
+ * under_repair
+ */
+export const updateCopyStatus =
+  async (
+    copyId,
+    status
+  ) => {
+    const res =
+      await axiosClient.patch(
+        `/borrow/copies/${copyId}/status`,
+        {
+          status,
+        }
+      );
+
+    return res.data.data;
+  };
+
 export const retireCopy =
-  async (copyId) => {
+  async (
+    copyId
+  ) => {
     const res =
       await axiosClient.post(
         `/borrow/copies/${copyId}/retire`
