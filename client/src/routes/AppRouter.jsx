@@ -46,20 +46,8 @@ import AdminBooks
 import AdminBookCopies
   from '../pages/AdminBookCopies';
 
-import CirculationDesk
-  from '../pages/CirculationDesk';
-
-import StaffLoans
-  from '../pages/StaffLoans';
-
-import StaffReservations
-  from '../pages/StaffReservations';
-
-import StaffMembers
-  from '../pages/StaffMembers';
-
-import StaffFines
-  from '../pages/StaffFines';
+import AdminUsers
+  from '../pages/AdminUsers';
 
 import ProtectedRoute
   from './ProtectedRoute';
@@ -171,76 +159,6 @@ export default function AppRouter() {
       />
 
       <Route
-        path="/admin/circulation"
-        element={
-          <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
-          >
-            <CirculationDesk />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/loans"
-        element={
-          <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
-          >
-            <StaffLoans />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/reservations"
-        element={
-          <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
-          >
-            <StaffReservations />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/members"
-        element={
-          <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
-          >
-            <StaffMembers />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/fines"
-        element={
-          <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
-          >
-            <StaffFines />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
         path="/admin/books"
         element={
           <ProtectedRoute
@@ -264,6 +182,20 @@ export default function AppRouter() {
             ]}
           >
             <AdminBookCopies />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute
+            roles={[
+              'admin',
+              'librarian',
+            ]}
+          >
+            <AdminUsers />
           </ProtectedRoute>
         }
       />

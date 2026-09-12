@@ -7,7 +7,6 @@ const {
 } =
   require('../modules/audit/audit.service');
 
-
 const resolveAuditEvent =
   ({
     method,
@@ -15,8 +14,6 @@ const resolveAuditEvent =
     body,
     responseBody,
   }) => {
-   
-
     if (
       method === 'POST' &&
       /^\/api\/v1\/books\/?$/.test(
@@ -26,10 +23,8 @@ const resolveAuditEvent =
       return {
         action:
           'BOOK_CREATED',
-
         entity:
           'book',
-
         entityId:
           responseBody?.data?.id ||
           null,
@@ -51,10 +46,8 @@ const resolveAuditEvent =
       return {
         action:
           'BOOK_UPDATED',
-
         entity:
           'book',
-
         entityId:
           bookMatch[1],
       };
@@ -68,16 +61,12 @@ const resolveAuditEvent =
       return {
         action:
           'BOOK_DELETED',
-
         entity:
           'book',
-
         entityId:
           bookMatch[1],
       };
     }
-
-    
 
     if (
       method === 'POST' &&
@@ -88,17 +77,13 @@ const resolveAuditEvent =
       return {
         action:
           'COPIES_ADDED',
-
         entity:
           'book',
-
         entityId:
           body?.bookId ||
           null,
       };
     }
-
-
 
     const retireMatch =
       path.match(
@@ -113,16 +98,12 @@ const resolveAuditEvent =
       return {
         action:
           'COPY_RETIRED',
-
         entity:
           'book_copy',
-
         entityId:
           retireMatch[1],
       };
     }
-
-   
 
     const copyActionMatch =
       path.match(
@@ -183,16 +164,13 @@ const resolveAuditEvent =
             actionMap[
               operation
             ],
-
           entity:
             'book_copy',
-
           entityId:
             copyId,
         };
       }
     }
-
 
     const copyStatusMatch =
       path.match(
@@ -231,17 +209,13 @@ const resolveAuditEvent =
             statusMap[
               body.status
             ],
-
           entity:
             'book_copy',
-
           entityId:
             copyStatusMatch[1],
         };
       }
     }
-
-   
 
     const returnMatch =
       path.match(
@@ -256,16 +230,12 @@ const resolveAuditEvent =
       return {
         action:
           'LOAN_RETURN_RECORDED',
-
         entity:
           'borrow_record',
-
         entityId:
           returnMatch[1],
       };
     }
-
-    
 
     const finePaymentMatch =
       path.match(
@@ -280,10 +250,8 @@ const resolveAuditEvent =
       return {
         action:
           'FINE_MANUAL_PAYMENT_RECORDED',
-
         entity:
           'fine',
-
         entityId:
           finePaymentMatch[1],
       };
@@ -302,16 +270,70 @@ const resolveAuditEvent =
       return {
         action:
           'FINE_WAIVED',
-
         entity:
           'fine',
-
         entityId:
           fineWaiveMatch[1],
       };
     }
 
-    
+    const membershipMatch =
+      path.match(
+        /^\/api\/v1\/users\/([^/]+)\/membership\/?$/
+      );
+
+    if (
+      membershipMatch &&
+      method ===
+        'PATCH'
+    ) {
+      const actionMap = {
+        active:
+          'MEMBERSHIP_ACTIVATED',
+
+        suspended:
+          'MEMBERSHIP_SUSPENDED',
+
+        expired:
+          'MEMBERSHIP_EXPIRED',
+      };
+
+      return {
+        action:
+          actionMap[
+            body?.membershipStatus
+          ] ||
+          'MEMBERSHIP_UPDATED',
+
+        entity:
+          'user',
+
+        entityId:
+          membershipMatch[1],
+      };
+    }
+
+    const roleMatch =
+      path.match(
+        /^\/api\/v1\/users\/([^/]+)\/role\/?$/
+      );
+
+    if (
+      roleMatch &&
+      method ===
+        'PATCH'
+    ) {
+      return {
+        action:
+          'USER_ROLE_CHANGED',
+
+        entity:
+          'user',
+
+        entityId:
+          roleMatch[1],
+      };
+    }
 
     if (
       method === 'POST' &&
@@ -334,7 +356,6 @@ const resolveAuditEvent =
     return null;
   };
 
-
 const auditMiddleware =
   (
     req,
@@ -344,7 +365,6 @@ const auditMiddleware =
     let responseBody =
       null;
 
-   
     const originalJson =
       res.json.bind(
         res
@@ -363,7 +383,6 @@ const auditMiddleware =
     res.on(
       'finish',
       () => {
-       
         if (
           res.statusCode <
             200 ||
@@ -376,7 +395,6 @@ const auditMiddleware =
         const actor =
           req.user;
 
-        
         if (
           !actor ||
           ![
@@ -401,10 +419,8 @@ const auditMiddleware =
           resolveAuditEvent({
             method,
             path,
-
             body:
               req.body,
-
             responseBody,
           });
 
@@ -412,7 +428,6 @@ const auditMiddleware =
           return;
         }
 
-        
         createAuditLog({
           actorId:
             actor.id,
@@ -428,7 +443,6 @@ const auditMiddleware =
 
           metadata: {
             method,
-
             path,
 
             statusCode:

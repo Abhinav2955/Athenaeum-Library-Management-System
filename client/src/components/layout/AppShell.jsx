@@ -12,14 +12,15 @@ import {
 import NotificationBell
   from '../../features/notifications/NotificationBell';
 
-const navLinkClass = ({
-  isActive,
-}) =>
-  `rounded-card px-3 py-2 text-sm font-medium transition-colors ${
-    isActive
-      ? 'bg-brass-light text-brass-dark'
-      : 'text-ink-muted hover:bg-paper hover:text-ink'
-  }`;
+const navLinkClass =
+  ({
+    isActive,
+  }) =>
+    `rounded-card px-3 py-2 text-sm font-medium transition-colors ${
+      isActive
+        ? 'bg-brass-light text-brass-dark'
+        : 'text-ink-muted hover:bg-paper hover:text-ink'
+    }`;
 
 export default function AppShell({
   children,
@@ -39,7 +40,7 @@ export default function AppShell({
 
   return (
     <div className="flex min-h-screen bg-paper">
-      <aside className="hidden w-64 flex-col border-r border-hairline bg-white px-4 py-6 sm:flex">
+      <aside className="hidden w-56 flex-col border-r border-hairline bg-white px-4 py-6 sm:flex">
         <p className="px-3 font-mono text-xs uppercase tracking-[0.2em] text-brass">
           Athenaeum
         </p>
@@ -95,10 +96,6 @@ export default function AppShell({
             <>
               <div className="my-2 border-t border-hairline" />
 
-              <p className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-muted">
-                Staff
-              </p>
-
               <NavLink
                 to="/admin"
                 className={
@@ -110,57 +107,21 @@ export default function AppShell({
               </NavLink>
 
               <NavLink
-                to="/admin/circulation"
-                className={
-                  navLinkClass
-                }
-              >
-                Circulation Desk
-              </NavLink>
-
-              <NavLink
-                to="/admin/loans"
-                className={
-                  navLinkClass
-                }
-              >
-                Loan Management
-              </NavLink>
-
-              <NavLink
-                to="/admin/reservations"
-                className={
-                  navLinkClass
-                }
-              >
-                Reservation Management
-              </NavLink>
-
-              <NavLink
-                to="/admin/members"
-                className={
-                  navLinkClass
-                }
-              >
-                Member Management
-              </NavLink>
-
-              <NavLink
-                to="/admin/fines"
-                className={
-                  navLinkClass
-                }
-              >
-                Fine Management
-              </NavLink>
-
-              <NavLink
                 to="/admin/books"
                 className={
                   navLinkClass
                 }
               >
                 Manage Books
+              </NavLink>
+
+              <NavLink
+                to="/admin/users"
+                className={
+                  navLinkClass
+                }
+              >
+                Users
               </NavLink>
             </>
           )}
@@ -174,10 +135,6 @@ export default function AppShell({
 
             <span className="text-ink">
               {user?.name}
-            </span>{' '}
-
-            <span className="text-ink-muted">
-              · {user?.role}
             </span>
           </p>
 
