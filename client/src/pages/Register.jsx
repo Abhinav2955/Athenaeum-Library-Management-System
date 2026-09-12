@@ -1,115 +1,228 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import AuthLayout from '../components/layout/AuthLayout';
-import PasswordInput from '../components/common/PasswordInput';
-import Input from '../components/common/Input';
-import Button from '../components/common/Button';
-import { useAuth } from '../features/auth/AuthContext';
+import {
+  useState,
+} from 'react';
 
-// Mirrors the backend's Zod password rule so the person sees the same
-// requirement client-side before ever hitting the server.
-const PASSWORD_RULE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+import {
+  Link,
+  useNavigate,
+} from 'react-router-dom';
+
+import Input
+  from '../components/common/Input';
+
+import Button
+  from '../components/common/Button';
+
+import {
+  useAuth,
+} from '../features/auth/AuthContext';
 
 export default function Register() {
-  const { register, login } = useAuth();
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '' });
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [formError, setFormError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    register,
+  } = useAuth();
 
-  const handleChange = (field) => (e) => {
-    setForm((f) => ({ ...f, [field]: e.target.value }));
-    setFieldErrors((fe) => ({ ...fe, [field]: undefined }));
-  };
+  const [
+    form,
+    setForm,
+  ] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+  });
 
-  const validate = () => {
-    const errors = {};
-    if (form.name.trim().length < 2) errors.name = 'Enter your full name';
-    if (!/^\S+@\S+\.\S+$/.test(form.email)) errors.email = 'Enter a valid email address';
-    if (!PASSWORD_RULE.test(form.password)) {
-      errors.password = 'At least 8 characters, with an uppercase letter, a lowercase letter, and a number';
-    }
-    setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  const [
+    error,
+    setError,
+  ] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormError('');
-    if (!validate()) return;
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
-    setIsSubmitting(true);
-    try {
-      const payload = { ...form, phone: form.phone.trim() || undefined };
-      await register(payload);
-      // Registration doesn't log the user in server-side, so chain a login
-      // immediately for a one-step signup experience.
-      await login({ email: form.email, password: form.password });
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      const message = err.response?.data?.message || 'Something went wrong. Please try again.';
-      setFormError(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const handleChange =
+    (event) => {
+      const {
+        name,
+        value,
+      } =
+        event.target;
+
+      setForm(
+        (previous) => ({
+          ...previous,
+          [name]:
+            value,
+        })
+      );
+    };
+
+  const handleSubmit =
+    async (
+      event
+    ) => {
+      event.preventDefault();
+
+      setLoading(true);
+      setError('');
+
+      try {
+        await register({
+          name:
+            form.name.trim(),
+
+          email:
+            form.email
+              .trim()
+              .toLowerCase(),
+
+          phone:
+            form.phone.trim() ||
+            undefined,
+
+          password:
+            form.password,
+        });
+
+        /*
+         * IMPORTANT:
+         *
+         * No login().
+         * No dashboard.
+         *
+         * Send member to pre-auth verification UI.
+         */
+        navigate(
+          `/verify-email?email=${encodeURIComponent(
+            form.email
+              .trim()
+              .toLowerCase()
+          )}`,
+          {
+            replace:
+              true,
+          }
+        );
+      } catch (err) {
+        setError(
+          err.response?.data
+            ?.message ||
+            'Could not create your account.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
 
   return (
-    <AuthLayout title="Create your account" subtitle="Join the library to borrow and reserve titles.">
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        {formError && (
-          <div className="rounded-card border border-status-danger bg-status-dangerBg px-3 py-2 text-sm text-status-danger">
-            {formError}
+    <main className="flex min-h-screen items-center justify-center bg-paper px-4">
+      <div className="w-full max-w-md rounded-card border border-hairline bg-white p-7">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-brass">
+          Athenaeum
+        </p>
+
+        <h1 className="mt-3 font-serif text-2xl font-semibold text-ink">
+          Create your account
+        </h1>
+
+        <p className="mt-2 text-sm text-ink-muted">
+          You will need to verify your email before accessing the library.
+        </p>
+
+        {error && (
+          <div className="mt-5 rounded-card border border-status-danger bg-status-dangerBg px-3 py-2 text-sm text-status-danger">
+            {error}
           </div>
         )}
 
-        <Input
-          id="name"
-          label="Full name"
-          autoComplete="name"
-          value={form.name}
-          onChange={handleChange('name')}
-          error={fieldErrors.name}
-        />
-        <Input
-          id="email"
-          label="Email"
-          type="email"
-          autoComplete="email"
-          value={form.email}
-          onChange={handleChange('email')}
-          error={fieldErrors.email}
-        />
-        <Input
-          id="phone"
-          label="Phone (optional)"
-          type="tel"
-          autoComplete="tel"
-          value={form.phone}
-          onChange={handleChange('phone')}
-        />
-        <PasswordInput
-          id="password"
-          label="Password"
-          autoComplete="current-password"
-          value={form.password}
-          onChange={handleChange('password')}
-          error={fieldErrors.password}
-        />
+        <form
+          onSubmit={
+            handleSubmit
+          }
+          className="mt-6 space-y-4"
+        >
+          <Input
+            id="name"
+            name="name"
+            label="Full name"
+            value={
+              form.name
+            }
+            onChange={
+              handleChange
+            }
+            required
+          />
 
-        <Button type="submit" disabled={isSubmitting} className="mt-2 w-full">
-          {isSubmitting ? 'Creating account…' : 'Create account'}
-        </Button>
-      </form>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            label="Email"
+            value={
+              form.email
+            }
+            onChange={
+              handleChange
+            }
+            required
+          />
 
-      <p className="mt-6 text-sm text-ink-muted">
-        Already have an account?{' '}
-        <Link to="/login" className="font-medium text-brass hover:underline">
-          Sign in
-        </Link>
-      </p>
-    </AuthLayout>
+          <Input
+            id="phone"
+            name="phone"
+            label="Phone (optional)"
+            value={
+              form.phone
+            }
+            onChange={
+              handleChange
+            }
+          />
+
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            label="Password"
+            value={
+              form.password
+            }
+            onChange={
+              handleChange
+            }
+            required
+          />
+
+          <Button
+            type="submit"
+            disabled={
+              loading
+            }
+            className="w-full"
+          >
+            {loading
+              ? 'Creating account…'
+              : 'Create account'}
+          </Button>
+        </form>
+
+        <p className="mt-5 text-center text-sm text-ink-muted">
+          Already verified?{' '}
+
+          <Link
+            to="/login"
+            className="font-medium text-brass hover:underline"
+          >
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </main>
   );
 }

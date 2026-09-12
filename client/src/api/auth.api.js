@@ -1,48 +1,138 @@
-import axiosClient, { setAccessToken } from './axiosClient';
+import axiosClient
+  from './axiosClient';
 
-export const register = async ({ name, email, password, phone }) => {
-  const res = await axiosClient.post('/auth/register', { name, email, password, phone });
-  return res.data.data;
-};
+export const register =
+  async (payload) => {
+    const response =
+      await axiosClient.post(
+        '/auth/register',
+        payload
+      );
 
-export const login = async ({ email, password }) => {
-  const res = await axiosClient.post('/auth/login', { email, password });
-  setAccessToken(res.data.data.accessToken);
-  return res.data.data.user;
-};
+    return response.data.data;
+  };
 
-export const logout = async () => {
-  await axiosClient.post('/auth/logout');
-  setAccessToken(null);
-};
+export const login =
+  async (payload) => {
+    const response =
+      await axiosClient.post(
+        '/auth/login',
+        payload
+      );
 
-export const fetchCurrentUser = async () => {
-  const res = await axiosClient.get('/auth/me');
-  return res.data.data;
-};
+    return response.data.data;
+  };
 
-export const silentRefresh = async () => {
-  const res = await axiosClient.post('/auth/refresh');
-  setAccessToken(res.data.data.accessToken);
-  return res.data.data.user;
-};
+export const refreshSession =
+  async () => {
+    const response =
+      await axiosClient.post(
+        '/auth/refresh'
+      );
 
-export const verifyEmail = async (token) => {
-  const res = await axiosClient.post('/auth/verify-email', { token });
-  return res.data;
-};
+    return response.data.data;
+  };
 
-export const resendVerification = async () => {
-  const res = await axiosClient.post('/auth/resend-verification');
-  return res.data;
-};
+export const logout =
+  async () => {
+    const response =
+      await axiosClient.post(
+        '/auth/logout'
+      );
 
-export const forgotPassword = async (email) => {
-  const res = await axiosClient.post('/auth/forgot-password', { email });
-  return res.data;
-};
+    return response.data.data;
+  };
 
-export const resetPassword = async (token, newPassword) => {
-  const res = await axiosClient.post('/auth/reset-password', { token, newPassword });
-  return res.data;
-};
+export const getMe =
+  async () => {
+    const response =
+      await axiosClient.get(
+        '/auth/me'
+      );
+
+    return response.data.data;
+  };
+
+/*
+ * Verification now returns:
+ *
+ * {
+ *   user,
+ *   accessToken
+ * }
+ *
+ * and the backend also sets the refresh-token
+ * httpOnly cookie.
+ */
+export const verifyEmail =
+  async (token) => {
+    const response =
+      await axiosClient.post(
+        '/auth/verify-email',
+        {
+          token,
+        }
+      );
+
+    return response.data.data;
+  };
+
+export const resendVerification =
+  async (email) => {
+    const response =
+      await axiosClient.post(
+        '/auth/resend-verification',
+        {
+          email,
+        }
+      );
+
+    return response.data;
+  };
+
+export const forgotPassword =
+  async (email) => {
+    const response =
+      await axiosClient.post(
+        '/auth/forgot-password',
+        {
+          email,
+        }
+      );
+
+    return response.data;
+  };
+
+export const resetPassword =
+  async (
+    token,
+    password
+  ) => {
+    const response =
+      await axiosClient.post(
+        '/auth/reset-password',
+        {
+          token,
+          password,
+        }
+      );
+
+    return response.data;
+  };
+
+export const changePassword =
+  async (
+    currentPassword,
+    newPassword
+  ) => {
+    const response =
+      await axiosClient.post(
+        '/auth/change-password',
+        {
+          currentPassword,
+          newPassword,
+        }
+      );
+
+    return response.data;
+  };

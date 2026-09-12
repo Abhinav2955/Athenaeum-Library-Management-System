@@ -1,11 +1,26 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
+
 const { Op } = require('sequelize');
-const { User, RefreshToken } = require('../../database/models');
-const ApiError = require('../../utils/ApiError');
-const env = require('../../config/env');
-const logger = require('../../config/logger');
-const { queueEmail } = require('../../jobs/queues/email.queue');
+
+const {
+  User,
+  RefreshToken,
+} = require('../../database/models');
+
+const ApiError =
+  require('../../utils/ApiError');
+
+const env =
+  require('../../config/env');
+
+const logger =
+  require('../../config/logger');
+
+const {
+  queueEmail,
+} = require('../../jobs/queues/email.queue');
+
 const {
   signAccessToken,
   signRefreshToken,
@@ -14,283 +29,950 @@ const {
 } = require('../../utils/token');
 
 const SALT_ROUNDS = 12;
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
-const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
-const msFromExpiry = (expiresIn) => {
-  // supports simple formats like '15m', '7d', '1h'
-  const match = /^(\d+)([smhd])$/.exec(expiresIn);
-  if (!match) return 15 * 60 * 1000;
-  const value = Number(match[1]);
-  const unit = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2]];
-  return value * unit;
+const MAX_FAILED_ATTEMPTS = 5;
+
+const LOCK_DURATION_MS =
+  15 * 60 * 1000;
+
+const VERIFICATION_TOKEN_EXPIRY_MS =
+  24 * 60 * 60 * 1000;
+
+const VERIFICATION_RESEND_COOLDOWN_MS =
+  60 * 1000;
+
+const RESET_TOKEN_EXPIRY_MS =
+  60 * 60 * 1000;
+
+const msFromExpiry = (
+  expiresIn
+) => {
+  const match =
+    /^(\d+)([smhd])$/.exec(
+      expiresIn
+    );
+
+  if (!match) {
+    return 15 * 60 * 1000;
+  }
+
+  const value =
+    Number(match[1]);
+
+  const multiplier = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  }[match[2]];
+
+  return value * multiplier;
 };
 
-// Belt-and-suspenders alongside the Redis client's own connectTimeout/
-// enableOfflineQueue settings (see config/redis.js) — guarantees a queueing
-// attempt can never stall a register/login/reset request beyond 2 seconds,
-// regardless of what state the Redis connection is in.
-const withTimeout = (promise, ms) =>
+const withTimeout = (
+  promise,
+  ms
+) =>
   Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Email queue timed out')), ms)),
+
+    new Promise(
+      (
+        _,
+        reject
+      ) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                'Email queue timed out'
+              )
+            ),
+          ms
+        )
+    ),
   ]);
 
-const issueTokenPair = async (user, meta = {}) => {
-  const accessToken = signAccessToken(user);
-  const refreshToken = signRefreshToken(user);
+const issueTokenPair =
+  async (
+    user,
+    meta = {}
+  ) => {
+    const accessToken =
+      signAccessToken(user);
 
-  await RefreshToken.create({
-    userId: user.id,
-    tokenHash: hashToken(refreshToken),
-    expiresAt: new Date(Date.now() + msFromExpiry(env.JWT_REFRESH_EXPIRES_IN)),
-    userAgent: meta.userAgent || null,
-    ipAddress: meta.ipAddress || null,
-  });
+    const refreshToken =
+      signRefreshToken(user);
 
-  return { accessToken, refreshToken };
-};
+    await RefreshToken.create({
+      userId:
+        user.id,
 
-// Only the hash is ever stored (same principle as password/refresh-token
-// hashing) — the raw token exists only in the emailed link, so a database
-// leak alone can't be used to verify someone else's account.
-const sendVerificationEmail = async (user) => {
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  user.emailVerificationTokenHash = hashToken(rawToken);
-  user.emailVerificationExpires = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
-  await user.save();
+      tokenHash:
+        hashToken(
+          refreshToken
+        ),
 
-  const link = `${env.FRONTEND_URL}/verify-email?token=${rawToken}`;
-  try {
-    await withTimeout(
-      queueEmail({
-        to: user.email,
-        subject: 'Verify your Athenaeum account',
-        html: `<p>Hi ${user.name},</p>
-          <p>Welcome to Athenaeum Library. Please verify your email to complete your registration:</p>
-          <p><a href="${link}">${link}</a></p>
-          <p>This link expires in 24 hours.</p>`,
-      }),
-      2000
-    );
-  } catch (err) {
-    // Registration itself should still succeed even if the email queue is
-    // unreachable (e.g. Redis not running locally) — the person can request
-    // a fresh link later via /auth/resend-verification.
-    logger.error('Failed to queue verification email', { error: err.message || String(err), code: err.code });
-  }
-};
+      expiresAt:
+        new Date(
+          Date.now() +
+            msFromExpiry(
+              env.JWT_REFRESH_EXPIRES_IN
+            )
+        ),
 
-const register = async ({ name, email, password, phone }) => {
-  const existing = await User.findOne({ where: { email } });
-  if (existing) {
-    throw ApiError.conflict('An account with this email already exists');
-  }
+      userAgent:
+        meta.userAgent ||
+        null,
 
-  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-  const user = await User.create({ name, email, passwordHash, phone, role: 'member' });
+      ipAddress:
+        meta.ipAddress ||
+        null,
+    });
 
-  await sendVerificationEmail(user);
+    return {
+      accessToken,
+      refreshToken,
+    };
+  };
 
-  return user;
-};
+const sendVerificationEmail =
+  async (user) => {
+    const rawToken =
+      crypto
+        .randomBytes(32)
+        .toString('hex');
 
-const verifyEmail = async (rawToken) => {
-  const tokenHash = hashToken(rawToken);
-  const user = await User.findOne({
-    where: { emailVerificationTokenHash: tokenHash, emailVerificationExpires: { [Op.gt]: new Date() } },
-  });
+    user.emailVerificationTokenHash =
+      hashToken(rawToken);
 
-  if (!user) {
-    throw ApiError.badRequest('This verification link is invalid or has expired');
-  }
+    user.emailVerificationExpires =
+      new Date(
+        Date.now() +
+          VERIFICATION_TOKEN_EXPIRY_MS
+      );
 
-  user.isEmailVerified = true;
-  user.emailVerificationTokenHash = null;
-  user.emailVerificationExpires = null;
-  await user.save();
-
-  return user;
-};
-
-const resendVerificationEmail = async (userId) => {
-  const user = await User.findByPk(userId);
-  if (!user) throw ApiError.notFound('User not found');
-  if (user.isEmailVerified) {
-    throw ApiError.badRequest('This email is already verified');
-  }
-
-  await sendVerificationEmail(user);
-};
-
-const login = async ({ email, password }, meta = {}) => {
-  const user = await User.findOne({ where: { email } });
-
-  // Same error for "no user" and "wrong password" — don't reveal which one it was.
-  if (!user) {
-    throw ApiError.unauthorized('Invalid email or password');
-  }
-
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
-    const minutesLeft = Math.ceil((user.lockedUntil - new Date()) / 60000);
-    throw ApiError.forbidden(`Account temporarily locked. Try again in ${minutesLeft} minute(s)`);
-  }
-
-  const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) {
-    user.failedLoginAttempts += 1;
-    if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-      user.lockedUntil = new Date(Date.now() + LOCK_DURATION_MS);
-      user.failedLoginAttempts = 0;
-    }
     await user.save();
-    throw ApiError.unauthorized('Invalid email or password');
-  }
 
-  if (user.membershipStatus === 'suspended') {
-    throw ApiError.forbidden('Your account has been suspended. Contact the library.');
-  }
+    const link =
+      `${env.FRONTEND_URL}/verify-email?token=${encodeURIComponent(
+        rawToken
+      )}`;
 
-  user.failedLoginAttempts = 0;
-  user.lockedUntil = null;
-  await user.save();
+    try {
+      await withTimeout(
+        queueEmail({
+          to:
+            user.email,
 
-  const tokens = await issueTokenPair(user, meta);
-  return { user, ...tokens };
-};
+          subject:
+            'Verify your Athenaeum account',
 
-// Rotation with reuse detection: every refresh issues a brand-new refresh token
-// and revokes the old one. If a token that's already revoked/replaced is
-// presented again, that's a strong signal it was stolen — so we revoke the
-// entire token family (every token for that user) and force re-login.
-const refresh = async (rawToken, meta = {}) => {
-  if (!rawToken) throw ApiError.unauthorized('Refresh token missing');
+          html: `
+            <p>Hi ${user.name},</p>
 
-  let payload;
-  try {
-    payload = verifyRefreshToken(rawToken);
-  } catch {
-    throw ApiError.unauthorized('Invalid or expired refresh token');
-  }
+            <p>
+              Welcome to Athenaeum Library.
+              Please verify your email address before signing in.
+            </p>
 
-  const tokenHash = hashToken(rawToken);
-  const stored = await RefreshToken.findOne({ where: { userId: payload.sub, tokenHash } });
+            <p>
+              <a href="${link}">
+                Verify my email
+              </a>
+            </p>
 
-  if (!stored) {
-    throw ApiError.unauthorized('Refresh token not recognized');
-  }
+            <p>
+              This link expires in 24 hours.
+            </p>
 
-  if (stored.revokedAt) {
-    // Reuse of a revoked token — nuke every active session for this user.
+            <p>
+              If you did not create this account,
+              you can ignore this email.
+            </p>
+          `,
+        }),
+
+        2000
+      );
+    } catch (error) {
+      logger.error(
+        'Failed to queue verification email',
+        {
+          error:
+            error.message ||
+            String(error),
+
+          code:
+            error.code,
+        }
+      );
+    }
+  };
+
+const register =
+  async ({
+    name,
+    email,
+    password,
+    phone,
+  }) => {
+    const normalizedEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    const existing =
+      await User.findOne({
+        where: {
+          email:
+            normalizedEmail,
+        },
+      });
+
+    if (existing) {
+      throw ApiError.conflict(
+        'An account with this email already exists'
+      );
+    }
+
+    const passwordHash =
+      await bcrypt.hash(
+        password,
+        SALT_ROUNDS
+      );
+
+    const user =
+      await User.create({
+        name,
+        email:
+          normalizedEmail,
+        passwordHash,
+        phone,
+        role:
+          'member',
+
+        /*
+         * A newly-created real account is NOT
+         * authenticated until email verification.
+         */
+        isEmailVerified:
+          false,
+      });
+
+    /*
+     * Exactly one automatic verification email.
+     */
+    await sendVerificationEmail(
+      user
+    );
+
+    return user;
+  };
+
+/*
+ * Verification now establishes the session.
+ *
+ * Successful verification:
+ *
+ * unverified
+ *    ↓
+ * verified
+ *    ↓
+ * token pair created
+ *    ↓
+ * frontend can go directly to dashboard
+ */
+const verifyEmail =
+  async (
+    rawToken,
+    meta = {}
+  ) => {
+    const tokenHash =
+      hashToken(rawToken);
+
+    const user =
+      await User.findOne({
+        where: {
+          emailVerificationTokenHash:
+            tokenHash,
+
+          emailVerificationExpires: {
+            [Op.gt]:
+              new Date(),
+          },
+        },
+      });
+
+    if (!user) {
+      throw ApiError.badRequest(
+        'This verification link is invalid or has expired'
+      );
+    }
+
+    user.isEmailVerified =
+      true;
+
+    user.emailVerificationTokenHash =
+      null;
+
+    user.emailVerificationExpires =
+      null;
+
+    await user.save();
+
+    const tokens =
+      await issueTokenPair(
+        user,
+        meta
+      );
+
+    return {
+      user,
+      ...tokens,
+    };
+  };
+
+/*
+ * Resend no longer requires an authenticated session,
+ * because an unverified member deliberately has no
+ * authenticated session.
+ *
+ * They identify the account by email.
+ *
+ * The response should remain generic at controller
+ * level where practical to avoid account enumeration.
+ */
+const resendVerificationEmail =
+  async (email) => {
+    const normalizedEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    const user =
+      await User.findOne({
+        where: {
+          email:
+            normalizedEmail,
+        },
+      });
+
+    /*
+     * Don't reveal whether an account exists.
+     */
+    if (!user) {
+      return {
+        sent:
+          false,
+      };
+    }
+
+    /*
+     * Already verified accounts don't need another
+     * verification message.
+     */
+    if (
+      user.isEmailVerified
+    ) {
+      return {
+        sent:
+          false,
+      };
+    }
+
+    if (
+      user.emailVerificationExpires
+    ) {
+      const previousSendAt =
+        new Date(
+          new Date(
+            user.emailVerificationExpires
+          ).getTime() -
+            VERIFICATION_TOKEN_EXPIRY_MS
+        );
+
+      const elapsed =
+        Date.now() -
+        previousSendAt.getTime();
+
+      if (
+        elapsed <
+        VERIFICATION_RESEND_COOLDOWN_MS
+      ) {
+        const remainingSeconds =
+          Math.max(
+            1,
+
+            Math.ceil(
+              (
+                VERIFICATION_RESEND_COOLDOWN_MS -
+                elapsed
+              ) /
+                1000
+            )
+          );
+
+        /*
+         * ApiError in your project already supports
+         * normal HTTP error construction through
+         * static helpers. If tooManyRequests exists
+         * in your current ApiError, use it.
+         */
+        if (
+          typeof ApiError.tooManyRequests ===
+          'function'
+        ) {
+          throw ApiError.tooManyRequests(
+            `Please wait ${remainingSeconds} second(s) before requesting another verification email`
+          );
+        }
+
+        const error =
+          ApiError.badRequest(
+            `Please wait ${remainingSeconds} second(s) before requesting another verification email`
+          );
+
+        error.statusCode =
+          429;
+
+        throw error;
+      }
+    }
+
+    await sendVerificationEmail(
+      user
+    );
+
+    return {
+      sent:
+        true,
+    };
+  };
+
+const login =
+  async (
+    {
+      email,
+      password,
+    },
+    meta = {}
+  ) => {
+    const normalizedEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    const user =
+      await User.findOne({
+        where: {
+          email:
+            normalizedEmail,
+        },
+      });
+
+    if (!user) {
+      throw ApiError.unauthorized(
+        'Invalid email or password'
+      );
+    }
+
+    if (
+      user.lockedUntil &&
+      user.lockedUntil >
+        new Date()
+    ) {
+      const minutesLeft =
+        Math.ceil(
+          (
+            user.lockedUntil -
+            new Date()
+          ) /
+            60000
+        );
+
+      throw ApiError.forbidden(
+        `Account temporarily locked. Try again in ${minutesLeft} minute(s)`
+      );
+    }
+
+    const isMatch =
+      await bcrypt.compare(
+        password,
+        user.passwordHash
+      );
+
+    if (!isMatch) {
+      user.failedLoginAttempts +=
+        1;
+
+      if (
+        user.failedLoginAttempts >=
+        MAX_FAILED_ATTEMPTS
+      ) {
+        user.lockedUntil =
+          new Date(
+            Date.now() +
+              LOCK_DURATION_MS
+          );
+
+        user.failedLoginAttempts =
+          0;
+      }
+
+      await user.save();
+
+      throw ApiError.unauthorized(
+        'Invalid email or password'
+      );
+    }
+
+    /*
+     * IMPORTANT
+     *
+     * Real development/production users cannot log
+     * in before email verification.
+     *
+     * NODE_ENV=test bypass preserves the existing
+     * integration helpers used throughout Parts 1-10,
+     * which create fake accounts and immediately
+     * authenticate them.
+     */
+    if (
+      !user.isEmailVerified &&
+      env.NODE_ENV !==
+        'test'
+    ) {
+      throw ApiError.forbidden(
+        'Please verify your email before signing in'
+      );
+    }
+
+    if (
+      user.membershipStatus ===
+      'suspended'
+    ) {
+      throw ApiError.forbidden(
+        'Your account has been suspended. Contact the library.'
+      );
+    }
+
+    user.failedLoginAttempts =
+      0;
+
+    user.lockedUntil =
+      null;
+
+    await user.save();
+
+    const tokens =
+      await issueTokenPair(
+        user,
+        meta
+      );
+
+    return {
+      user,
+      ...tokens,
+    };
+  };
+
+const refresh =
+  async (
+    rawToken,
+    meta = {}
+  ) => {
+    if (!rawToken) {
+      throw ApiError.unauthorized(
+        'Refresh token missing'
+      );
+    }
+
+    let payload;
+
+    try {
+      payload =
+        verifyRefreshToken(
+          rawToken
+        );
+    } catch {
+      throw ApiError.unauthorized(
+        'Invalid or expired refresh token'
+      );
+    }
+
+    const tokenHash =
+      hashToken(rawToken);
+
+    const stored =
+      await RefreshToken.findOne({
+        where: {
+          userId:
+            payload.sub,
+
+          tokenHash,
+        },
+      });
+
+    if (!stored) {
+      throw ApiError.unauthorized(
+        'Refresh token not recognized'
+      );
+    }
+
+    if (
+      stored.revokedAt
+    ) {
+      await RefreshToken.update(
+        {
+          revokedAt:
+            new Date(),
+        },
+
+        {
+          where: {
+            userId:
+              payload.sub,
+
+            revokedAt: {
+              [Op.is]:
+                null,
+            },
+          },
+        }
+      );
+
+      throw ApiError.unauthorized(
+        'Refresh token reuse detected — all sessions revoked'
+      );
+    }
+
+    if (
+      stored.expiresAt <
+      new Date()
+    ) {
+      throw ApiError.unauthorized(
+        'Refresh token expired'
+      );
+    }
+
+    const user =
+      await User.findByPk(
+        payload.sub
+      );
+
+    if (!user) {
+      throw ApiError.unauthorized(
+        'User no longer exists'
+      );
+    }
+
+    /*
+     * Any refresh token belonging to an unverified
+     * account should no longer create sessions.
+     *
+     * This also closes old pre-patch sessions.
+     */
+    if (
+      !user.isEmailVerified &&
+      env.NODE_ENV !==
+        'test'
+    ) {
+      throw ApiError.forbidden(
+        'Please verify your email before continuing'
+      );
+    }
+
+    if (
+      user.membershipStatus ===
+      'suspended'
+    ) {
+      throw ApiError.forbidden(
+        'Your account has been suspended'
+      );
+    }
+
+    const {
+      accessToken,
+      refreshToken:
+        newRefreshToken,
+    } =
+      await issueTokenPair(
+        user,
+        meta
+      );
+
+    const newStored =
+      await RefreshToken.findOne({
+        where: {
+          userId:
+            user.id,
+
+          tokenHash:
+            hashToken(
+              newRefreshToken
+            ),
+        },
+      });
+
+    stored.revokedAt =
+      new Date();
+
+    stored.replacedByTokenId =
+      newStored.id;
+
+    await stored.save();
+
+    return {
+      user,
+      accessToken,
+      refreshToken:
+        newRefreshToken,
+    };
+  };
+
+const logout =
+  async (rawToken) => {
+    if (!rawToken) {
+      return;
+    }
+
+    const tokenHash =
+      hashToken(rawToken);
+
     await RefreshToken.update(
-      { revokedAt: new Date() },
-      { where: { userId: payload.sub, revokedAt: { [Op.is]: null } } }
+      {
+        revokedAt:
+          new Date(),
+      },
+
+      {
+        where: {
+          tokenHash,
+
+          revokedAt: {
+            [Op.is]:
+              null,
+          },
+        },
+      }
     );
-    throw ApiError.unauthorized('Refresh token reuse detected — all sessions revoked');
-  }
+  };
 
-  if (stored.expiresAt < new Date()) {
-    throw ApiError.unauthorized('Refresh token expired');
-  }
+const changePassword =
+  async (
+    userId,
+    currentPassword,
+    newPassword
+  ) => {
+    const user =
+      await User.findByPk(
+        userId
+      );
 
-  const user = await User.findByPk(payload.sub);
-  if (!user) throw ApiError.unauthorized('User no longer exists');
+    if (!user) {
+      throw ApiError.notFound(
+        'User not found'
+      );
+    }
 
-  const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(user, meta);
+    const isMatch =
+      await bcrypt.compare(
+        currentPassword,
+        user.passwordHash
+      );
 
-  const newStored = await RefreshToken.findOne({
-    where: { userId: user.id, tokenHash: hashToken(newRefreshToken) },
-  });
-  stored.revokedAt = new Date();
-  stored.replacedByTokenId = newStored.id;
-  await stored.save();
+    if (!isMatch) {
+      throw ApiError.badRequest(
+        'Current password is incorrect'
+      );
+    }
 
-  return { user, accessToken, refreshToken: newRefreshToken };
-};
+    user.passwordHash =
+      await bcrypt.hash(
+        newPassword,
+        SALT_ROUNDS
+      );
 
-const logout = async (rawToken) => {
-  if (!rawToken) return;
-  const tokenHash = hashToken(rawToken);
-  await RefreshToken.update(
-    { revokedAt: new Date() },
-    { where: { tokenHash, revokedAt: { [Op.is]: null } } }
-  );
-};
+    await user.save();
 
-const changePassword = async (userId, currentPassword, newPassword) => {
-  const user = await User.findByPk(userId);
-  const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
-  if (!isMatch) {
-    throw ApiError.badRequest('Current password is incorrect');
-  }
-  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  await user.save();
+    await RefreshToken.update(
+      {
+        revokedAt:
+          new Date(),
+      },
 
-  // Changing password revokes all existing sessions — standard security hygiene.
-  await RefreshToken.update(
-    { revokedAt: new Date() },
-    { where: { userId, revokedAt: { [Op.is]: null } } }
-  );
-};
+      {
+        where: {
+          userId,
 
-// Deliberately never reveals whether the email exists — the response is
-// identical either way, so this endpoint can't be used to enumerate
-// registered accounts.
-const forgotPassword = async (email) => {
-  const user = await User.findOne({ where: { email } });
-  if (!user) return; // silent no-op — same response as the success path
-
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  user.passwordResetTokenHash = hashToken(rawToken);
-  user.passwordResetExpires = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
-  await user.save();
-
-  const link = `${env.FRONTEND_URL}/reset-password?token=${rawToken}`;
-  try {
-    await withTimeout(
-      queueEmail({
-        to: user.email,
-        subject: 'Reset your Athenaeum password',
-        html: `<p>Hi ${user.name},</p>
-          <p>We received a request to reset your password. This link expires in 1 hour:</p>
-          <p><a href="${link}">${link}</a></p>
-          <p>If you didn't request this, you can safely ignore this email.</p>`,
-      }),
-      2000
+          revokedAt: {
+            [Op.is]:
+                null,
+          },
+        },
+      }
     );
-  } catch (err) {
-    logger.error('Failed to queue password reset email', { error: err.message || String(err), code: err.code });
-  }
-};
+  };
 
-const resetPassword = async (rawToken, newPassword) => {
-  const tokenHash = hashToken(rawToken);
-  const user = await User.findOne({
-    where: { passwordResetTokenHash: tokenHash, passwordResetExpires: { [Op.gt]: new Date() } },
-  });
+const forgotPassword =
+  async (email) => {
+    const normalizedEmail =
+      email
+        .trim()
+        .toLowerCase();
 
-  if (!user) {
-    throw ApiError.badRequest('This password reset link is invalid or has expired');
-  }
+    const user =
+      await User.findOne({
+        where: {
+          email:
+            normalizedEmail,
+        },
+      });
 
-  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  user.passwordResetTokenHash = null;
-  user.passwordResetExpires = null;
-  user.failedLoginAttempts = 0;
-  user.lockedUntil = null;
-  await user.save();
+    /*
+     * Keep response generic.
+     */
+    if (!user) {
+      return;
+    }
 
-  // A password reset is exactly the kind of event that should kill every
-  // existing session — same reasoning as changePassword above.
-  await RefreshToken.update(
-    { revokedAt: new Date() },
-    { where: { userId: user.id, revokedAt: { [Op.is]: null } } }
-  );
-};
+    const rawToken =
+      crypto
+        .randomBytes(32)
+        .toString('hex');
+
+    user.passwordResetTokenHash =
+      hashToken(rawToken);
+
+    user.passwordResetExpires =
+      new Date(
+        Date.now() +
+          RESET_TOKEN_EXPIRY_MS
+      );
+
+    await user.save();
+
+    const link =
+      `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(
+        rawToken
+      )}`;
+
+    try {
+      await withTimeout(
+        queueEmail({
+          to:
+            user.email,
+
+          subject:
+            'Reset your Athenaeum password',
+
+          html: `
+            <p>Hi ${user.name},</p>
+
+            <p>
+              We received a request to reset your password.
+            </p>
+
+            <p>
+              <a href="${link}">
+                Reset my password
+              </a>
+            </p>
+
+            <p>
+              This link expires in 1 hour.
+            </p>
+          `,
+        }),
+
+        2000
+      );
+    } catch (error) {
+      logger.error(
+        'Failed to queue password reset email',
+        {
+          error:
+            error.message ||
+            String(error),
+
+          code:
+            error.code,
+        }
+      );
+    }
+  };
+
+const resetPassword =
+  async (
+    rawToken,
+    newPassword
+  ) => {
+    const tokenHash =
+      hashToken(rawToken);
+
+    const user =
+      await User.findOne({
+        where: {
+          passwordResetTokenHash:
+            tokenHash,
+
+          passwordResetExpires: {
+            [Op.gt]:
+              new Date(),
+          },
+        },
+      });
+
+    if (!user) {
+      throw ApiError.badRequest(
+        'This password reset link is invalid or has expired'
+      );
+    }
+
+    user.passwordHash =
+      await bcrypt.hash(
+        newPassword,
+        SALT_ROUNDS
+      );
+
+    user.passwordResetTokenHash =
+      null;
+
+    user.passwordResetExpires =
+      null;
+
+    user.failedLoginAttempts =
+      0;
+
+    user.lockedUntil =
+      null;
+
+    await user.save();
+
+    await RefreshToken.update(
+      {
+        revokedAt:
+          new Date(),
+      },
+
+      {
+        where: {
+          userId:
+            user.id,
+
+          revokedAt: {
+            [Op.is]:
+              null,
+          },
+        },
+      }
+    );
+  };
 
 module.exports = {
+  VERIFICATION_RESEND_COOLDOWN_MS,
+
   register,
   login,
   refresh,

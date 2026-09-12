@@ -8,6 +8,9 @@ const connection =
 const env =
   require('../../config/env');
 
+const logger =
+  require('../../config/logger');
+
 const emailQueue =
   new Queue(
     'email',
@@ -16,13 +19,7 @@ const emailQueue =
     }
   );
 
-/*
- * Production email delivery can retry temporary
- * SMTP/network failures.
- *
- * Development should fail quickly instead of
- * repeatedly retrying local/test email jobs.
- */
+
 const getJobOptions = () => {
   if (
     env.NODE_ENV ===
@@ -60,6 +57,27 @@ const getJobOptions = () => {
 
 const queueEmail =
   async (payload) => {
+  
+    if (
+      env.NODE_ENV ===
+      'test'
+    ) {
+      logger.debug(
+        `📧 Test email skipped: ${payload.subject || 'No subject'} → ${payload.to || 'No recipient'}`
+      );
+
+      return {
+        id:
+          'test-email-skipped',
+
+        skipped:
+          true,
+
+        data:
+          payload,
+      };
+    }
+
     return emailQueue.add(
       'send-email',
 

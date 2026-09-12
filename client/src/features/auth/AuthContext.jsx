@@ -1,59 +1,253 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import * as authApi from '../../api/auth.api';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
-const AuthContext = createContext(null);
+import axiosClient
+  from '../../api/axiosClient';
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true); // true while we attempt session restore
-  const [error, setError] = useState(null);
+import * as authApi
+  from '../../api/auth.api';
 
-  // On first load, the browser has no access token in memory (it lives only
-  // in JS state, never localStorage) but may still have a valid httpOnly
-  // refresh cookie from a previous visit — try to silently restore the
-  // session from that before deciding the user is logged out.
+const AuthContext =
+  createContext(null);
+
+const setAxiosAccessToken =
+  (token) => {
+    if (token) {
+      axiosClient.defaults
+        .headers
+        .common
+        .Authorization =
+          `Bearer ${token}`;
+
+      return;
+    }
+
+    delete axiosClient
+      .defaults
+      .headers
+      .common
+      .Authorization;
+  };
+
+export function AuthProvider({
+  children,
+}) {
+  const [
+    user,
+    setUser,
+  ] = useState(null);
+
+  const [
+    accessToken,
+    setAccessTokenState,
+  ] = useState(null);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const establishSession =
+    useCallback(
+      ({
+        user:
+          sessionUser,
+        accessToken:
+          token,
+      }) => {
+        setUser(
+          sessionUser
+        );
+
+        setAccessTokenState(
+          token
+        );
+
+        setAxiosAccessToken(
+          token
+        );
+      },
+      []
+    );
+
+  const clearSession =
+    useCallback(
+      () => {
+        setUser(null);
+
+        setAccessTokenState(
+          null
+        );
+
+        setAxiosAccessToken(
+          null
+        );
+      },
+      []
+    );
+
+  
   useEffect(() => {
-    let cancelled = false;
-    authApi
-      .silentRefresh()
-      .then((restoredUser) => {
-        if (!cancelled) setUser(restoredUser);
-      })
-      .catch(() => {
-        if (!cancelled) setUser(null);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+    let mounted = true;
+
+    const bootstrap =
+      async () => {
+        try {
+          const result =
+            await authApi
+              .refreshSession();
+
+          if (mounted) {
+            establishSession(
+              result
+            );
+          }
+        } catch {
+          if (mounted) {
+            clearSession();
+          }
+        } finally {
+          if (mounted) {
+            setLoading(false);
+          }
+        }
+      };
+
+    bootstrap();
+
     return () => {
-      cancelled = true;
+      mounted = false;
     };
-  }, []);
+  }, [
+    establishSession,
+    clearSession,
+  ]);
 
-  const login = useCallback(async (credentials) => {
-    setError(null);
-    const loggedInUser = await authApi.login(credentials);
-    setUser(loggedInUser);
-    return loggedInUser;
-  }, []);
+  const login =
+    useCallback(
+      async (
+        credentials
+      ) => {
+        const result =
+          await authApi.login(
+            credentials
+          );
 
-  const register = useCallback(async (details) => {
-    setError(null);
-    return authApi.register(details);
-  }, []);
+        establishSession(
+          result
+        );
 
-  const logout = useCallback(async () => {
-    await authApi.logout();
-    setUser(null);
-  }, []);
+        return result;
+      },
+      [
+        establishSession,
+      ]
+    );
 
-  const value = { user, isLoading, error, setError, login, register, logout };
+  
+  const register =
+    useCallback(
+      async (
+        payload
+      ) => {
+        return authApi.register(
+          payload
+        );
+      },
+      []
+    );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const verifyAndLogin =
+    useCallback(
+      async (token) => {
+        const result =
+          await authApi
+            .verifyEmail(
+              token
+            );
+
+        establishSession(
+          result
+        );
+
+        return result;
+      },
+      [
+        establishSession,
+      ]
+    );
+
+  const logout =
+    useCallback(
+      async () => {
+        try {
+          await authApi.logout();
+        } finally {
+          clearSession();
+        }
+      },
+      [
+        clearSession,
+      ]
+    );
+
+  const value =
+    useMemo(
+      () => ({
+        user,
+        accessToken,
+        loading,
+
+        isAuthenticated:
+          Boolean(
+            user &&
+            accessToken
+          ),
+
+        login,
+        register,
+        verifyAndLogin,
+        logout,
+        establishSession,
+      }),
+      [
+        user,
+        accessToken,
+        loading,
+        login,
+        register,
+        verifyAndLogin,
+        logout,
+        establishSession,
+      ]
+    );
+
+  return (
+    <AuthContext.Provider
+      value={value}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
-  return ctx;
-};
+export function useAuth() {
+  const context =
+    useContext(
+      AuthContext
+    );
+
+  if (!context) {
+    throw new Error(
+      'useAuth must be used inside AuthProvider'
+    );
+  }
+
+  return context;
+}
