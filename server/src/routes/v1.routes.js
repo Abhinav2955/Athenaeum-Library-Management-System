@@ -22,8 +22,8 @@ const reportRoutes =
 const notificationRoutes =
   require('../modules/notifications/notification.routes');
 
-const memberRoutes =
-  require('../modules/members/member.routes');
+const auditRoutes =
+  require('../modules/audit/audit.routes');
 
 const router =
   express.Router();
@@ -63,9 +63,10 @@ router.use(
   notificationRoutes
 );
 
+
 router.use(
-  '/members',
-  memberRoutes
+  '/audit',
+  auditRoutes
 );
 
 module.exports =
