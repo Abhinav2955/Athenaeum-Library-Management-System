@@ -2,14 +2,24 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  backend-test:
-    name: Backend - Test
+  backend:
+    name: Backend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       mysql:
@@ -20,19 +30,20 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=10s
+          --health-cmd="mysqladmin ping -h localhost -proot_password"
+          --health-interval=5s
           --health-timeout=5s
-          --health-retries=10
+          --health-retries=20
+
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
           --health-cmd="redis-cli ping"
-          --health-interval=10s
+          --health-interval=5s
           --health-timeout=5s
-          --health-retries=10
+          --health-retries=20
 
     defaults:
       run:
@@ -40,53 +51,46 @@ jobs:
 
     env:
       NODE_ENV: test
+
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_NAME: library_db_test
       DB_USER: root
       DB_PASSWORD: root_password
+
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
-      JWT_ACCESS_SECRET: ci_test_access_secret_do_not_use_in_prod
-      JWT_REFRESH_SECRET: ci_test_refresh_secret_do_not_use_in_prod
+
+      JWT_ACCESS_SECRET: ci_test_access_secret_do_not_use_in_production
+      JWT_REFRESH_SECRET: ci_test_refresh_secret_do_not_use_in_production
+
       CLIENT_ORIGIN: http://localhost:5173
+      FRONTEND_URL: http://localhost:5173
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Wait for MySQL to accept connections
-        run: |
-          for i in $(seq 1 20); do
-            mysqladmin ping -h 127.0.0.1 -P 3306 -u root -proot_password && break
-            echo "Waiting for MySQL... ($i/20)"
-            sleep 3
-          done
+      - name: Lint backend
+        run: npm run lint
 
-      - name: Wait for Redis to accept connections
-        run: |
-          for i in $(seq 1 20); do
-            redis-cli -h 127.0.0.1 -p 6379 ping && break
-            echo "Waiting for Redis... ($i/20)"
-            sleep 2
-          done
+      - name: Run backend tests
+        run: npm run test:ci
 
-      - name: Run test suite
-        run: npm test
-
-  frontend-build:
-    name: Frontend - Build
+  frontend:
+    name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     defaults:
       run:
@@ -96,15 +100,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: client/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build frontend
         run: npm run build

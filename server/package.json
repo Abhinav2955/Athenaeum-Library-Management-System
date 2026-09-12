@@ -1,14 +1,16 @@
 {
   "name": "library-management-system-server",
   "version": "1.0.0",
-  "description": "Production-style Express + MySQL backend for a Library Management System",
+  "description": "Production-style Express + MySQL backend for Athenaeum Library Management System",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "lint": "eslint src --ext .js",
-    "test": "jest --runInBand --forceExit --testTimeout=60000",
+    "test": "jest --runInBand --testTimeout=60000",
+    "test:ci": "jest --runInBand --ci --testTimeout=60000",
+    "test:handles": "jest --runInBand --detectOpenHandles --testTimeout=60000",
     "migrate": "sequelize-cli db:migrate",
     "migrate:undo": "sequelize-cli db:migrate:undo",
     "seed": "sequelize-cli db:seed:all",

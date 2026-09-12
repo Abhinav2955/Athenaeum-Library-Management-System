@@ -1,6 +1,5 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
-
 const { Op } = require('sequelize');
 
 const {
@@ -57,7 +56,9 @@ const msFromExpiry = (
   }
 
   const value =
-    Number(match[1]);
+    Number(
+      match[1]
+    );
 
   const multiplier = {
     s: 1000,
@@ -73,25 +74,50 @@ const withTimeout = (
   promise,
   ms
 ) =>
-  Promise.race([
-    promise,
-
-    new Promise(
-      (
-        _,
-        reject
-      ) =>
+  new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      const timer =
         setTimeout(
-          () =>
+          () => {
             reject(
               new Error(
                 'Email queue timed out'
               )
-            ),
+            );
+          },
           ms
+        );
+
+      Promise.resolve(
+        promise
+      )
+        .then(
+          (result) => {
+            clearTimeout(
+              timer
+            );
+
+            resolve(
+              result
+            );
+          }
         )
-    ),
-  ]);
+        .catch(
+          (error) => {
+            clearTimeout(
+              timer
+            );
+
+            reject(
+              error
+            );
+          }
+        );
+    }
+  );
 
 const issueTokenPair =
   async (
@@ -99,10 +125,14 @@ const issueTokenPair =
     meta = {}
   ) => {
     const accessToken =
-      signAccessToken(user);
+      signAccessToken(
+        user
+      );
 
     const refreshToken =
-      signRefreshToken(user);
+      signRefreshToken(
+        user
+      );
 
     await RefreshToken.create({
       userId:
@@ -137,14 +167,20 @@ const issueTokenPair =
   };
 
 const sendVerificationEmail =
-  async (user) => {
+  async (
+    user
+  ) => {
     const rawToken =
       crypto
         .randomBytes(32)
-        .toString('hex');
+        .toString(
+          'hex'
+        );
 
     user.emailVerificationTokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     user.emailVerificationExpires =
       new Date(
@@ -170,29 +206,12 @@ const sendVerificationEmail =
 
           html: `
             <p>Hi ${user.name},</p>
-
-            <p>
-              Welcome to Athenaeum Library.
-              Please verify your email address before signing in.
-            </p>
-
-            <p>
-              <a href="${link}">
-                Verify my email
-              </a>
-            </p>
-
-            <p>
-              This link expires in 24 hours.
-            </p>
-
-            <p>
-              If you did not create this account,
-              you can ignore this email.
-            </p>
+            <p>Welcome to Athenaeum Library. Please verify your email address before signing in.</p>
+            <p><a href="${link}">Verify my email</a></p>
+            <p>This link expires in 24 hours.</p>
+            <p>If you did not create this account, you can ignore this email.</p>
           `,
         }),
-
         2000
       );
     } catch (error) {
@@ -201,7 +220,9 @@ const sendVerificationEmail =
         {
           error:
             error.message ||
-            String(error),
+            String(
+              error
+            ),
 
           code:
             error.code,
@@ -245,24 +266,21 @@ const register =
     const user =
       await User.create({
         name,
+
         email:
           normalizedEmail,
+
         passwordHash,
+
         phone,
+
         role:
           'member',
 
-        /*
-         * A newly-created real account is NOT
-         * authenticated until email verification.
-         */
         isEmailVerified:
           false,
       });
 
-    /*
-     * Exactly one automatic verification email.
-     */
     await sendVerificationEmail(
       user
     );
@@ -270,26 +288,15 @@ const register =
     return user;
   };
 
-/*
- * Verification now establishes the session.
- *
- * Successful verification:
- *
- * unverified
- *    ↓
- * verified
- *    ↓
- * token pair created
- *    ↓
- * frontend can go directly to dashboard
- */
 const verifyEmail =
   async (
     rawToken,
     meta = {}
   ) => {
     const tokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     const user =
       await User.findOne({
@@ -333,18 +340,10 @@ const verifyEmail =
     };
   };
 
-/*
- * Resend no longer requires an authenticated session,
- * because an unverified member deliberately has no
- * authenticated session.
- *
- * They identify the account by email.
- *
- * The response should remain generic at controller
- * level where practical to avoid account enumeration.
- */
 const resendVerificationEmail =
-  async (email) => {
+  async (
+    email
+  ) => {
     const normalizedEmail =
       email
         .trim()
@@ -358,9 +357,6 @@ const resendVerificationEmail =
         },
       });
 
-    /*
-     * Don't reveal whether an account exists.
-     */
     if (!user) {
       return {
         sent:
@@ -368,10 +364,6 @@ const resendVerificationEmail =
       };
     }
 
-    /*
-     * Already verified accounts don't need another
-     * verification message.
-     */
     if (
       user.isEmailVerified
     ) {
@@ -403,7 +395,6 @@ const resendVerificationEmail =
         const remainingSeconds =
           Math.max(
             1,
-
             Math.ceil(
               (
                 VERIFICATION_RESEND_COOLDOWN_MS -
@@ -413,12 +404,6 @@ const resendVerificationEmail =
             )
           );
 
-        /*
-         * ApiError in your project already supports
-         * normal HTTP error construction through
-         * static helpers. If tooManyRequests exists
-         * in your current ApiError, use it.
-         */
         if (
           typeof ApiError.tooManyRequests ===
           'function'
@@ -527,17 +512,6 @@ const login =
       );
     }
 
-    /*
-     * IMPORTANT
-     *
-     * Real development/production users cannot log
-     * in before email verification.
-     *
-     * NODE_ENV=test bypass preserves the existing
-     * integration helpers used throughout Parts 1-10,
-     * which create fake accounts and immediately
-     * authenticate them.
-     */
     if (
       !user.isEmailVerified &&
       env.NODE_ENV !==
@@ -602,7 +576,9 @@ const refresh =
     }
 
     const tokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     const stored =
       await RefreshToken.findOne({
@@ -628,7 +604,6 @@ const refresh =
           revokedAt:
             new Date(),
         },
-
         {
           where: {
             userId:
@@ -667,12 +642,6 @@ const refresh =
       );
     }
 
-    /*
-     * Any refresh token belonging to an unverified
-     * account should no longer create sessions.
-     *
-     * This also closes old pre-patch sessions.
-     */
     if (
       !user.isEmailVerified &&
       env.NODE_ENV !==
@@ -732,20 +701,23 @@ const refresh =
   };
 
 const logout =
-  async (rawToken) => {
+  async (
+    rawToken
+  ) => {
     if (!rawToken) {
       return;
     }
 
     const tokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     await RefreshToken.update(
       {
         revokedAt:
           new Date(),
       },
-
       {
         where: {
           tokenHash,
@@ -801,14 +773,13 @@ const changePassword =
         revokedAt:
           new Date(),
       },
-
       {
         where: {
           userId,
 
           revokedAt: {
             [Op.is]:
-                null,
+              null,
           },
         },
       }
@@ -816,7 +787,9 @@ const changePassword =
   };
 
 const forgotPassword =
-  async (email) => {
+  async (
+    email
+  ) => {
     const normalizedEmail =
       email
         .trim()
@@ -830,9 +803,6 @@ const forgotPassword =
         },
       });
 
-    /*
-     * Keep response generic.
-     */
     if (!user) {
       return;
     }
@@ -840,10 +810,14 @@ const forgotPassword =
     const rawToken =
       crypto
         .randomBytes(32)
-        .toString('hex');
+        .toString(
+          'hex'
+        );
 
     user.passwordResetTokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     user.passwordResetExpires =
       new Date(
@@ -869,23 +843,11 @@ const forgotPassword =
 
           html: `
             <p>Hi ${user.name},</p>
-
-            <p>
-              We received a request to reset your password.
-            </p>
-
-            <p>
-              <a href="${link}">
-                Reset my password
-              </a>
-            </p>
-
-            <p>
-              This link expires in 1 hour.
-            </p>
+            <p>We received a request to reset your password.</p>
+            <p><a href="${link}">Reset my password</a></p>
+            <p>This link expires in 1 hour.</p>
           `,
         }),
-
         2000
       );
     } catch (error) {
@@ -894,7 +856,9 @@ const forgotPassword =
         {
           error:
             error.message ||
-            String(error),
+            String(
+              error
+            ),
 
           code:
             error.code,
@@ -909,7 +873,9 @@ const resetPassword =
     newPassword
   ) => {
     const tokenHash =
-      hashToken(rawToken);
+      hashToken(
+        rawToken
+      );
 
     const user =
       await User.findOne({
@@ -955,7 +921,6 @@ const resetPassword =
         revokedAt:
           new Date(),
       },
-
       {
         where: {
           userId:
@@ -972,7 +937,6 @@ const resetPassword =
 
 module.exports = {
   VERIFICATION_RESEND_COOLDOWN_MS,
-
   register,
   login,
   refresh,
