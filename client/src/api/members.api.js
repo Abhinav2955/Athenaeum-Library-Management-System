@@ -6,28 +6,35 @@ export const searchMembers =
     search,
     limit = 10
   ) => {
-    const res =
+    const response =
       await axiosClient.get(
-        '/members',
+        '/users',
         {
           params: {
             search,
             limit,
+            role:
+              'member',
           },
         }
       );
 
-    return res.data.data;
+    return (
+      response.data.data
+        .users || []
+    );
   };
 
 export const getMemberById =
-  async (memberId) => {
-    const res =
+  async (
+    memberId
+  ) => {
+    const response =
       await axiosClient.get(
-        `/members/${memberId}`
+        `/users/${memberId}`
       );
 
-    return res.data.data;
+    return response.data.data;
   };
 
 export const updateMembershipStatus =
@@ -35,13 +42,13 @@ export const updateMembershipStatus =
     memberId,
     membershipStatus
   ) => {
-    const res =
+    const response =
       await axiosClient.patch(
-        `/members/${memberId}/status`,
+        `/users/${memberId}/membership`,
         {
           membershipStatus,
         }
       );
 
-    return res.data.data;
+    return response.data.data;
   };

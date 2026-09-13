@@ -1,26 +1,65 @@
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../features/auth/AuthContext';
+import {
+  Navigate,
+  useLocation,
+} from 'react-router-dom';
 
-export default function ProtectedRoute({ children, roles }) {
-  const { user, isLoading } = useAuth();
-  const location = useLocation();
+import {
+  useAuth,
+} from '../features/auth/AuthContext';
 
-  if (isLoading) {
-    // Session restore (silent refresh) is still in flight — avoid a flash
-    // redirect to /login before we actually know if the user is signed in.
+export default function ProtectedRoute({
+  children,
+  roles,
+}) {
+  const {
+    user,
+    loading,
+  } = useAuth();
+
+  const location =
+    useLocation();
+
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-paper">
-        <p className="font-mono text-sm text-ink-muted">Loading…</p>
+      <div className="flex min-h-screen items-center justify-center bg-paper px-4">
+        <div className="text-center">
+          <p className="font-serif text-xl font-semibold text-ink">
+            Athenaeum
+          </p>
+
+          <p className="mt-2 text-sm text-ink-muted">
+            Loading your account…
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return (
+      <Navigate
+        to="/login"
+        state={{
+          from:
+            location,
+        }}
+        replace
+      />
+    );
   }
 
-  if (roles && !roles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />;
+  if (
+    roles &&
+    !roles.includes(
+      user.role
+    )
+  ) {
+    return (
+      <Navigate
+        to="/dashboard"
+        replace
+      />
+    );
   }
 
   return children;

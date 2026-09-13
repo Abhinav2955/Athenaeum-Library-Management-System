@@ -49,8 +49,28 @@ import AdminBookCopies
 import AdminUsers
   from '../pages/AdminUsers';
 
+import CirculationDesk
+  from '../pages/CirculationDesk';
+
+import StaffLoans
+  from '../pages/StaffLoans';
+
+import StaffFines
+  from '../pages/StaffFines';
+
+import StaffReservations
+  from '../pages/StaffReservations';
+
+import NotFound
+  from '../pages/NotFound';
+
 import ProtectedRoute
   from './ProtectedRoute';
+
+const staffRoles = [
+  'admin',
+  'librarian',
+];
 
 export default function AppRouter() {
   return (
@@ -148,12 +168,63 @@ export default function AppRouter() {
         path="/admin"
         element={
           <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
+            roles={
+              staffRoles
+            }
           >
             <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/circulation"
+        element={
+          <ProtectedRoute
+            roles={
+              staffRoles
+            }
+          >
+            <CirculationDesk />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/loans"
+        element={
+          <ProtectedRoute
+            roles={
+              staffRoles
+            }
+          >
+            <StaffLoans />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/reservations"
+        element={
+          <ProtectedRoute
+            roles={
+              staffRoles
+            }
+          >
+            <StaffReservations />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/fines"
+        element={
+          <ProtectedRoute
+            roles={
+              staffRoles
+            }
+          >
+            <StaffFines />
           </ProtectedRoute>
         }
       />
@@ -162,10 +233,9 @@ export default function AppRouter() {
         path="/admin/books"
         element={
           <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
+            roles={
+              staffRoles
+            }
           >
             <AdminBooks />
           </ProtectedRoute>
@@ -176,10 +246,9 @@ export default function AppRouter() {
         path="/admin/books/:bookId/copies"
         element={
           <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
+            roles={
+              staffRoles
+            }
           >
             <AdminBookCopies />
           </ProtectedRoute>
@@ -190,10 +259,9 @@ export default function AppRouter() {
         path="/admin/users"
         element={
           <ProtectedRoute
-            roles={[
-              'admin',
-              'librarian',
-            ]}
+            roles={
+              staffRoles
+            }
           >
             <AdminUsers />
           </ProtectedRoute>
@@ -213,10 +281,9 @@ export default function AppRouter() {
       <Route
         path="*"
         element={
-          <Navigate
-            to="/dashboard"
-            replace
-          />
+          <ProtectedRoute>
+            <NotFound />
+          </ProtectedRoute>
         }
       />
     </Routes>

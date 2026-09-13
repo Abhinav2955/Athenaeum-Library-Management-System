@@ -3,11 +3,27 @@
 @tailwind utilities;
 
 @layer base {
-  h1, h2, h3 {
+  html {
+    @apply bg-paper;
+  }
+
+  body {
+    @apply min-h-screen bg-paper font-sans text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
     @apply font-serif text-ink;
   }
 
-  /* Visible keyboard focus everywhere — no focus rings suppressed. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
   a:focus-visible,
   button:focus-visible,
   input:focus-visible,
@@ -15,13 +31,14 @@
   textarea:focus-visible {
     @apply outline-none ring-2 ring-brass ring-offset-2 ring-offset-paper;
   }
+
+  ::selection {
+    @apply bg-brass-light text-ink;
+  }
 }
 
 @layer components {
-  /* The signature element: a due-date-stamp style status badge, used for
-     loan/reservation/fine status everywhere instead of generic colored pills. */
   .stamp-badge {
-    @apply inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5
-           font-mono text-xs uppercase tracking-wide;
+    @apply inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs uppercase tracking-wide;
   }
 }
