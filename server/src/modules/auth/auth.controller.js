@@ -1,17 +1,9 @@
-const asyncHandler =
-  require('../../utils/asyncHandler');
+const asyncHandler = require('../../utils/asyncHandler');
+const ApiResponse = require('../../utils/ApiResponse');
+const authService = require('./auth.service');
+const env = require('../../config/env');
 
-const ApiResponse =
-  require('../../utils/ApiResponse');
-
-const authService =
-  require('./auth.service');
-
-const env =
-  require('../../config/env');
-
-const REFRESH_COOKIE_NAME =
-  'lms_refresh_token';
+const REFRESH_COOKIE_NAME = env.REFRESH_COOKIE_NAME;
 
 const REFRESH_COOKIE_MAX_AGE =
   7 *
@@ -21,61 +13,40 @@ const REFRESH_COOKIE_MAX_AGE =
   1000;
 
 const refreshCookieOptions = {
-  httpOnly:
-    true,
-
-  secure:
-    env.NODE_ENV ===
-    'production',
-
+  httpOnly: true,
+  secure: env.NODE_ENV === 'production',
   sameSite:
-    env.NODE_ENV ===
-    'production'
+    env.NODE_ENV === 'production'
       ? 'none'
       : 'lax',
-
-  path:
-    '/api/v1/auth',
-
-  maxAge:
-    REFRESH_COOKIE_MAX_AGE,
+  path: '/api/v1/auth',
+  maxAge: REFRESH_COOKIE_MAX_AGE,
 };
 
-const safeUser = (
-  user
-) => {
+const safeUser = (user) => {
   if (!user) {
     return null;
   }
 
   const data =
-    typeof user.toJSON ===
-    'function'
+    typeof user.toJSON === 'function'
       ? user.toJSON()
       : { ...user };
 
   delete data.passwordHash;
-
   delete data.emailVerificationTokenHash;
   delete data.emailVerificationExpires;
-
   delete data.passwordResetTokenHash;
   delete data.passwordResetExpires;
-
   delete data.failedLoginAttempts;
   delete data.lockedUntil;
 
   return data;
 };
 
-const getMeta = (
-  req
-) => ({
+const getMeta = (req) => ({
   userAgent:
-    req.get(
-      'user-agent'
-    ) || null,
-
+    req.get('user-agent') || null,
   ipAddress:
     req.ip || null,
 });
@@ -97,21 +68,16 @@ const clearRefreshCookie = (
   res.clearCookie(
     REFRESH_COOKIE_NAME,
     {
-      httpOnly:
-        true,
-
+      httpOnly: true,
       secure:
         env.NODE_ENV ===
         'production',
-
       sameSite:
         env.NODE_ENV ===
         'production'
           ? 'none'
           : 'lax',
-
-      path:
-        '/api/v1/auth',
+      path: '/api/v1/auth',
     }
   );
 };
@@ -123,18 +89,15 @@ const register =
       res
     ) => {
       const user =
-        await authService
-          .register(
-            req.body
-          );
+        await authService.register(
+          req.body
+        );
 
-      
       return new ApiResponse(
         201,
         {
           user:
             safeUser(user),
-
           requiresVerification:
             true,
         },
@@ -150,11 +113,10 @@ const login =
       res
     ) => {
       const result =
-        await authService
-          .login(
-            req.body,
-            getMeta(req)
-          );
+        await authService.login(
+          req.body,
+          getMeta(req)
+        );
 
       setRefreshCookie(
         res,
@@ -168,7 +130,6 @@ const login =
             safeUser(
               result.user
             ),
-
           accessToken:
             result.accessToken,
         },
@@ -177,9 +138,6 @@ const login =
     }
   );
 
-/*
- * Verification now logs the member in.
- */
 const verifyEmail =
   asyncHandler(
     async (
@@ -187,11 +145,10 @@ const verifyEmail =
       res
     ) => {
       const result =
-        await authService
-          .verifyEmail(
-            req.body.token,
-            getMeta(req)
-          );
+        await authService.verifyEmail(
+          req.body.token,
+          getMeta(req)
+        );
 
       setRefreshCookie(
         res,
@@ -205,7 +162,6 @@ const verifyEmail =
             safeUser(
               result.user
             ),
-
           accessToken:
             result.accessToken,
         },
@@ -225,10 +181,6 @@ const resendVerification =
           req.body.email
         );
 
-      /*
-       * Generic response prevents account
-       * enumeration.
-       */
       return new ApiResponse(
         200,
         null,
@@ -249,11 +201,10 @@ const refresh =
         ];
 
       const result =
-        await authService
-          .refresh(
-            rawToken,
-            getMeta(req)
-          );
+        await authService.refresh(
+          rawToken,
+          getMeta(req)
+        );
 
       setRefreshCookie(
         res,
@@ -267,7 +218,6 @@ const refresh =
             safeUser(
               result.user
             ),
-
           accessToken:
             result.accessToken,
         },
@@ -287,14 +237,11 @@ const logout =
           REFRESH_COOKIE_NAME
         ];
 
-      await authService
-        .logout(
-          rawToken
-        );
-
-      clearRefreshCookie(
-        res
+      await authService.logout(
+        rawToken
       );
+
+      clearRefreshCookie(res);
 
       return new ApiResponse(
         200,
@@ -312,9 +259,7 @@ const me =
     ) => {
       return new ApiResponse(
         200,
-        safeUser(
-          req.user
-        )
+        safeUser(req.user)
       ).send(res);
     }
   );
@@ -332,9 +277,7 @@ const changePassword =
           req.body.newPassword
         );
 
-      clearRefreshCookie(
-        res
-      );
+      clearRefreshCookie(res);
 
       return new ApiResponse(
         200,
@@ -358,7 +301,7 @@ const forgotPassword =
       return new ApiResponse(
         200,
         null,
-        'If an account exists for that email, a password reset message has been sent.'
+        'If an account exists for that email, a password reset link has been sent.'
       ).send(res);
     }
   );
@@ -375,9 +318,7 @@ const resetPassword =
           req.body.password
         );
 
-      clearRefreshCookie(
-        res
-      );
+      clearRefreshCookie(res);
 
       return new ApiResponse(
         200,
@@ -390,12 +331,12 @@ const resetPassword =
 module.exports = {
   register,
   login,
+  verifyEmail,
+  resendVerification,
   refresh,
   logout,
   me,
   changePassword,
-  verifyEmail,
-  resendVerification,
   forgotPassword,
   resetPassword,
 };
