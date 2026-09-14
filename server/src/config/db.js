@@ -8,21 +8,21 @@ const env =
 const logger =
   require('./logger');
 
-const pool =
-  env.NODE_ENV === 'test'
-    ? {
-        max: 5,
-        min: 0,
-        acquire: 10000,
-        idle: 100,
-        evict: 100,
-      }
-    : {
-        max: 10,
-        min: 0,
-        acquire: 30000,
-        idle: 10000,
-      };
+const isTest =
+  env.NODE_ENV ===
+  'test';
+
+const dialectOptions = {};
+
+if (
+  env.DB_SSL ===
+  'true'
+) {
+  dialectOptions.ssl = {
+    rejectUnauthorized:
+      false,
+  };
+}
 
 const sequelize =
   new Sequelize(
@@ -48,7 +48,26 @@ const sequelize =
               )
           : false,
 
-      pool,
+      pool:
+        isTest
+          ? {
+              max: 5,
+              min: 0,
+              acquire:
+                10000,
+              idle:
+                100,
+              evict:
+                100,
+            }
+          : {
+              max: 5,
+              min: 0,
+              acquire:
+                30000,
+              idle:
+                10000,
+            },
 
       define: {
         underscored:
@@ -57,28 +76,57 @@ const sequelize =
         timestamps:
           true,
       },
+
+      dialectOptions,
     }
   );
 
 const connectDB =
   async () => {
-    try {
-      await sequelize
-        .authenticate();
+    const maxAttempts =
+      env.NODE_ENV ===
+      'production'
+        ? 10
+        : 1;
 
-      logger.info(
-        'MySQL connection established'
-      );
-    } catch (error) {
-      logger.error(
-        'Unable to connect to MySQL',
-        {
-          error:
-            error.message,
+    for (
+      let attempt = 1;
+      attempt <=
+      maxAttempts;
+      attempt += 1
+    ) {
+      try {
+        await sequelize.authenticate();
+
+        logger.info(
+          'MySQL connection established'
+        );
+
+        return;
+      } catch (error) {
+        if (
+          attempt ===
+          maxAttempts
+        ) {
+          logger.error(
+            'Unable to connect to MySQL',
+            {
+              error:
+                error.message,
+            }
+          );
+
+          throw error;
         }
-      );
 
-      process.exit(1);
+        await new Promise(
+          (resolve) =>
+            setTimeout(
+              resolve,
+              3000
+            )
+        );
+      }
     }
   };
 
