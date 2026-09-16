@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -18,6 +19,10 @@ import {
   listMyReservations,
   cancelReservation,
 } from '../api/reservations.api';
+
+import {
+  useNotifications,
+} from '../features/notifications/NotificationContext';
 
 const FILTERS = [
   {
@@ -92,14 +97,22 @@ export default function Reservations() {
     setCancelErrors,
   ] = useState({});
 
+  const {
+    notifications,
+  } = useNotifications();
+
+  const lastReadyNotificationId =
+    useRef(null);
+
   const fetchReservations =
     useCallback(
       async (
-        currentPage
+        currentPage,
+        showLoading = true
       ) => {
-        setIsLoading(
-          true
-        );
+        if (showLoading) {
+          setIsLoading(true);
+        }
 
         setError('');
 
@@ -133,9 +146,9 @@ export default function Reservations() {
               'Could not load your reservations.'
           );
         } finally {
-          setIsLoading(
-            false
-          );
+          if (showLoading) {
+            setIsLoading(false);
+          }
         }
       },
       []
@@ -146,6 +159,38 @@ export default function Reservations() {
       page
     );
   }, [
+    page,
+    fetchReservations,
+  ]);
+
+  useEffect(() => {
+    const readyNotification =
+      notifications.find(
+        (notification) =>
+          notification.type ===
+          'reservation_ready'
+      );
+
+    if (!readyNotification) {
+      return;
+    }
+
+    if (
+      lastReadyNotificationId.current ===
+      readyNotification.id
+    ) {
+      return;
+    }
+
+    lastReadyNotificationId.current =
+      readyNotification.id;
+
+    fetchReservations(
+      page,
+      false
+    );
+  }, [
+    notifications,
     page,
     fetchReservations,
   ]);
@@ -198,7 +243,8 @@ export default function Reservations() {
         );
 
         await fetchReservations(
-          page
+          page,
+          false
         );
       } catch (err) {
         const message =
