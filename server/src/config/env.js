@@ -96,6 +96,16 @@ const envSchema = z.object({
     .string()
     .optional(),
 
+  RESEND_API_KEY: z
+    .string()
+    .optional(),
+
+  RESEND_FROM: z
+    .string()
+    .default(
+      'Athenaeum Library <onboarding@resend.dev>'
+    ),
+
   SMTP_HOST: z
     .string()
     .optional(),

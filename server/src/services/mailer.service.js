@@ -1,62 +1,9 @@
 const nodemailer = require('nodemailer');
 
 const env = require('../config/env');
-
 const logger = require('../config/logger');
 
 let transporterPromise = null;
-
-/*
- * Local development should NOT repeatedly connect
- * to a real Gmail account.
- *
- * Development / test:
- *   Ethereal test SMTP
- *
- * Production:
- *   configured SMTP credentials
- */
-const shouldUseRealSmtp = () =>
-  env.NODE_ENV === 'production' &&
-  env.SMTP_HOST &&
-  env.SMTP_USER &&
-  env.SMTP_PASS;
-
-const createConfiguredTransporter = () => {
-  logger.info(
-    `📧 Using production SMTP host: ${env.SMTP_HOST}`
-  );
-
-  return nodemailer.createTransport({
-    host: env.SMTP_HOST,
-
-    port:
-      env.SMTP_PORT || 587,
-
-    secure:
-      Number(env.SMTP_PORT) === 465,
-
-    auth: {
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASS,
-    },
-
-    /*
-     * Prevent long hanging SMTP connections.
-     */
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-
-    /*
-     * Reuse SMTP connection where possible.
-     */
-    pool: true,
-
-    maxConnections: 2,
-    maxMessages: 50,
-  });
-};
 
 const createDevelopmentTransporter =
   async () => {
@@ -64,11 +11,7 @@ const createDevelopmentTransporter =
       await nodemailer.createTestAccount();
 
     logger.info(
-      '📧 Development email mode: using Ethereal test inbox'
-    );
-
-    logger.info(
-      '📧 Real SMTP credentials are ignored outside production'
+      'Development email mode: using Ethereal test inbox'
     );
 
     return nodemailer.createTransport({
@@ -98,27 +41,15 @@ const createDevelopmentTransporter =
     });
   };
 
-const getTransporter =
+const getDevelopmentTransporter =
   async () => {
     if (transporterPromise) {
       return transporterPromise;
     }
 
     transporterPromise =
-      shouldUseRealSmtp()
-        ? Promise.resolve(
-            createConfiguredTransporter()
-          )
-        : createDevelopmentTransporter();
+      createDevelopmentTransporter();
 
-    /*
-     * Important:
-     *
-     * If transporter creation itself fails, clear
-     * the cached promise so a later request can
-     * create a fresh transporter instead of keeping
-     * a permanently rejected Promise.
-     */
     transporterPromise.catch(
       () => {
         transporterPromise =
@@ -129,50 +60,125 @@ const getTransporter =
     return transporterPromise;
   };
 
-const sendEmail = async ({
-  to,
-  subject,
-  html,
-}) => {
-  const transporter =
-    await getTransporter();
+const sendWithResend =
+  async ({
+    to,
+    subject,
+    html,
+  }) => {
+    if (!env.RESEND_API_KEY) {
+      throw new Error(
+        'RESEND_API_KEY is required in production'
+      );
+    }
 
-  const info =
-    await transporter.sendMail({
-      from:
-        env.SMTP_FROM ||
-        '"Athenaeum Library" <no-reply@athenaeum.local>',
+    const response =
+      await fetch(
+        'https://api.resend.com/emails',
+        {
+          method: 'POST',
 
+          headers: {
+            Authorization:
+              `Bearer ${env.RESEND_API_KEY}`,
+
+            'Content-Type':
+              'application/json',
+          },
+
+          body: JSON.stringify({
+            from:
+              env.RESEND_FROM,
+
+            to: [to],
+
+            subject,
+
+            html,
+          }),
+
+          signal:
+            AbortSignal.timeout(
+              15000
+            ),
+        }
+      );
+
+    const result =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result?.message ||
+        `Resend request failed with status ${response.status}`
+      );
+    }
+
+    logger.info(
+      `Email sent successfully to ${to}`
+    );
+
+    return result;
+  };
+
+const sendWithEthereal =
+  async ({
+    to,
+    subject,
+    html,
+  }) => {
+    const transporter =
+      await getDevelopmentTransporter();
+
+    const info =
+      await transporter.sendMail({
+        from:
+          '"Athenaeum Library" <no-reply@athenaeum.local>',
+
+        to,
+
+        subject,
+
+        html,
+      });
+
+    const previewUrl =
+      nodemailer.getTestMessageUrl(
+        info
+      );
+
+    if (previewUrl) {
+      logger.info(
+        `Email preview: ${previewUrl}`
+      );
+    }
+
+    return info;
+  };
+
+const sendEmail =
+  async ({
+    to,
+    subject,
+    html,
+  }) => {
+    if (
+      env.NODE_ENV ===
+      'production'
+    ) {
+      return sendWithResend({
+        to,
+        subject,
+        html,
+      });
+    }
+
+    return sendWithEthereal({
       to,
-
       subject,
-
       html,
     });
-
-  /*
-   * Ethereal returns a browser preview URL.
-   *
-   * No message is actually delivered to the
-   * recipient's real inbox.
-   */
-  const previewUrl =
-    nodemailer.getTestMessageUrl(
-      info
-    );
-
-  if (previewUrl) {
-    logger.info(
-      `📧 Email preview: ${previewUrl}`
-    );
-  } else {
-    logger.info(
-      `📧 Email sent successfully to ${to}`
-    );
-  }
-
-  return info;
-};
+  };
 
 module.exports = {
   sendEmail,
