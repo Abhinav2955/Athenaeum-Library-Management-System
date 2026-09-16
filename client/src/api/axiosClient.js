@@ -16,16 +16,14 @@ export const setAccessToken = (token) => {
   accessToken = token;
 
   if (token) {
-    axiosClient.defaults.headers.common.Authorization =
-      `Bearer ${token}`;
+    axiosClient.defaults.headers.common.Authorization = `Bearer ${token}`;
     return;
   }
 
   delete axiosClient.defaults.headers.common.Authorization;
 };
 
-export const getAccessToken = () =>
-  accessToken;
+export const getAccessToken = () => accessToken;
 
 const noRefreshPaths = [
   '/auth/login',
@@ -39,20 +37,15 @@ const noRefreshPaths = [
 ];
 
 const shouldSkipRefresh = (url = '') =>
-  noRefreshPaths.some((path) =>
-    url.includes(path)
-  );
+  noRefreshPaths.some((path) => url.includes(path));
 
-axiosClient.interceptors.request.use(
-  (config) => {
-    if (accessToken) {
-      config.headers.Authorization =
-        `Bearer ${accessToken}`;
-    }
-
-    return config;
+axiosClient.interceptors.request.use((config) => {
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
   }
-);
+
+  return config;
+});
 
 axiosClient.interceptors.response.use(
   (response) => response,
@@ -73,32 +66,24 @@ axiosClient.interceptors.response.use(
 
     try {
       if (!refreshPromise) {
-        refreshPromise =
-          axiosClient
-            .post('/auth/refresh')
-            .finally(() => {
-              refreshPromise = null;
-            });
+        refreshPromise = axiosClient
+          .post('/auth/refresh')
+          .finally(() => {
+            refreshPromise = null;
+          });
       }
 
-      const refreshResponse =
-        await refreshPromise;
-
-      const newAccessToken =
-        refreshResponse.data.data.accessToken;
+      const refreshResponse = await refreshPromise;
+      const newAccessToken = refreshResponse.data.data.accessToken;
 
       setAccessToken(newAccessToken);
 
-      config.headers =
-        config.headers || {};
-
-      config.headers.Authorization =
-        `Bearer ${newAccessToken}`;
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${newAccessToken}`;
 
       return axiosClient(config);
     } catch {
       setAccessToken(null);
-
       return Promise.reject(error);
     }
   }

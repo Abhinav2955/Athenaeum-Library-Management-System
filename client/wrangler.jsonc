@@ -1,9 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "athenaeum-library-management-system",
+  "main": "src/worker.js",
   "compatibility_date": "2026-09-16",
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   }
 }
