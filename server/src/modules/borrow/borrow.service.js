@@ -26,9 +26,65 @@ const fineService =
 const notificationService =
   require('../notifications/notification.service');
 
+const {
+  emitDataChanged,
+} = require('../../sockets/io');
+
 const LOAN_PERIOD_DAYS = 14;
 const MAX_RENEWALS = 2;
 const MAX_ACTIVE_LOANS_PER_USER = 5;
+
+const emitMemberLoanChange = (
+  userId,
+  resources,
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources,
+      userId,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        ...resources,
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
+
+const emitInventoryChange = (
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+        'inventory',
+      ],
+      authenticated: true,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+        'inventory',
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
 
 const addDays = (date, days) =>
   new Date(
@@ -378,31 +434,54 @@ const checkout = async (
       const now =
         new Date();
 
-      return BorrowRecord.create(
-        {
-          copyId:
-            copy.id,
+            const record =
+        await BorrowRecord.create(
+          {
+            copyId:
+              copy.id,
 
-          userId:
-            borrowerId,
+            userId:
+              borrowerId,
 
-          borrowedAt:
-            now,
-
-          dueAt:
-            addDays(
+            borrowedAt:
               now,
-              LOAN_PERIOD_DAYS
-            ),
 
-          status:
-            'active',
-        },
+            dueAt:
+              addDays(
+                now,
+                LOAN_PERIOD_DAYS
+              ),
 
-        {
-          transaction: t,
-        }
+            status:
+              'active',
+          },
+
+          {
+            transaction: t,
+          }
+        );
+
+      const resources = [
+        'loans',
+      ];
+
+      if (
+        checkedOutFromReservation
+      ) {
+        resources.push(
+          'reservations'
+        );
+      }
+
+      emitMemberLoanChange(
+        borrowerId,
+        resources,
+        t
       );
+
+      emitInventoryChange(t);
+
+      return record;
     }
   );
 };
@@ -529,8 +608,10 @@ const returnBook = async (
         }
       }
 
+           let fine = null;
+
       if (wasOverdue) {
-        const fine =
+        fine =
           await fineService
             .createFineForOverdueReturn(
               record,
@@ -556,6 +637,24 @@ const returnBook = async (
             t
           );
       }
+
+      const resources = [
+        'loans',
+      ];
+
+      if (fine) {
+        resources.push(
+          'fines'
+        );
+      }
+
+      emitMemberLoanChange(
+        record.userId,
+        resources,
+        t
+      );
+
+      emitInventoryChange(t);
 
       return {
         record,
@@ -651,9 +750,19 @@ const markLoanLost = async (
             1
         );
 
-      await book.save({
+            await book.save({
         transaction: t,
       });
+
+      emitMemberLoanChange(
+        record.userId,
+        [
+          'loans',
+        ],
+        t
+      );
+
+      emitInventoryChange(t);
 
       return record;
     }
@@ -792,9 +901,16 @@ const renew = async (
 
   record.renewedCount += 1;
 
-  await record.save();
+        await record.save();
 
-  return record;
+      emitMemberLoanChange(
+        record.userId,
+        [
+          'loans',
+        ]
+      );
+
+      return record;
 };
 
 const listMyLoans = async (
@@ -974,25 +1090,6 @@ const listCopiesForBook =
     });
   };
 
-/*
- * PART 8.1
- *
- * If a damaged / under-repair copy becomes usable
- * again, first check the reservation queue.
- *
- * If someone is waiting:
- *
- * damaged/under_repair -> reserved
- *
- * availableCopies stays unchanged.
- *
- *
- * If nobody is waiting:
- *
- * damaged/under_repair -> available
- *
- * availableCopies + 1.
- */
 const updateCopyStatus = async (
   copyId,
   nextStatus
@@ -1073,11 +1170,7 @@ const updateCopyStatus = async (
           }
         );
 
-      /*
-       * AVAILABLE -> DAMAGED
-       *
-       * The copy leaves general circulation.
-       */
+      
       if (
         oldStatus ===
           'available' &&
@@ -1097,25 +1190,17 @@ const updateCopyStatus = async (
             book.availableCopies -
               1
           );
-
         await book.save({
           transaction: t,
         });
 
+        emitInventoryChange(t);
+
         return copy;
       }
 
-      /*
-       * DAMAGED -> UNDER_REPAIR
-       *
-       * or
-       *
-       * UNDER_REPAIR -> DAMAGED
-       *
-       * Neither state is available for circulation,
-       * so inventory counters do not change.
-       */
-      if (
+     
+            if (
         nextStatus !==
         'available'
       ) {
@@ -1126,19 +1211,13 @@ const updateCopyStatus = async (
           transaction: t,
         });
 
+        emitInventoryChange(t);
+
         return copy;
       }
 
-      /*
-       * PART 8.1 FIX
-       *
-       * We are trying to return a repaired/damaged
-       * copy to usable circulation.
-       *
-       * Before making it generally available,
-       * offer it to the oldest waiting reservation.
-       */
-      const fulfilled =
+      
+            const fulfilled =
         await reservationService
           .tryFulfillNextReservation(
             copy.bookId,
@@ -1146,28 +1225,13 @@ const updateCopyStatus = async (
             t
           );
 
-      /*
-       * Someone was waiting.
-       *
-       * tryFulfillNextReservation() already changed:
-       *
-       * copy.status = reserved
-       * reservedForUserId = member
-       * reservation.status = ready
-       *
-       * Therefore availableCopies must remain
-       * unchanged.
-       */
       if (fulfilled) {
+        emitInventoryChange(t);
+
         return copy;
       }
 
-      /*
-       * Nobody is waiting.
-       *
-       * Copy can finally return to general
-       * availability.
-       */
+      
       copy.status =
         'available';
 
@@ -1185,9 +1249,11 @@ const updateCopyStatus = async (
             1
         );
 
-      await book.save({
+            await book.save({
         transaction: t,
       });
+
+      emitInventoryChange(t);
 
       return copy;
     }
@@ -1255,9 +1321,11 @@ const retireCopy = async (
             1
         );
 
-      await book.save({
+            await book.save({
         transaction: t,
       });
+
+      emitInventoryChange(t);
 
       return copy;
     }

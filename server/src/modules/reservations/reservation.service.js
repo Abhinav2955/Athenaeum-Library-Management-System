@@ -19,6 +19,10 @@ const {
 const notificationService =
   require('../notifications/notification.service');
 
+const {
+  emitDataChanged,
+} = require('../../sockets/io');
+
 const HOLD_DURATION_HOURS = 48;
 
 const addHours = (date, hours) =>
@@ -27,12 +31,59 @@ const addHours = (date, hours) =>
       hours * 3600000
   );
 
-/*
- * Create a reservation.
- *
- * Reservations are for books that currently
- * have no generally available physical copy.
- */
+const emitReservationChange = (
+  userId,
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'reservations',
+      ],
+      userId,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'reservations',
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
+
+const emitInventoryChange = (
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+        'inventory',
+      ],
+      authenticated: true,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+        'inventory',
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
+
 const createReservation = async (
   userId,
   bookId
@@ -48,12 +99,6 @@ const createReservation = async (
     );
   }
 
-  /*
-   * Part 5:
-   *
-   * Do not allow a member to join a waiting
-   * queue while copies are already available.
-   */
   if (
     book.availableCopies > 0
   ) {
@@ -83,25 +128,23 @@ const createReservation = async (
     );
   }
 
-  return Reservation.create({
-    userId,
-    bookId,
-    requestedAt:
-      new Date(),
-    status:
-      'waiting',
-  });
+  const reservation =
+    await Reservation.create({
+      userId,
+      bookId,
+      requestedAt:
+        new Date(),
+      status:
+        'waiting',
+    });
+
+  emitReservationChange(
+    userId
+  );
+
+  return reservation;
 };
 
-/*
- * Called when a physical copy becomes free.
- *
- * If somebody is waiting, the same physical copy
- * goes directly to the first member in the queue.
- *
- * availableCopies does NOT increase because the
- * copy never returns to general availability.
- */
 const tryFulfillNextReservation =
   async (
     bookId,
@@ -130,7 +173,7 @@ const tryFulfillNextReservation =
       });
 
     if (!next) {
-      return false;
+      return null;
     }
 
     const now =
@@ -193,7 +236,28 @@ const tryFulfillNextReservation =
         transaction
       );
 
-    return true;
+    emitReservationChange(
+      next.userId,
+      transaction
+    );
+
+    emitInventoryChange(
+      transaction
+    );
+
+    return {
+      reservationId:
+        next.id,
+
+      userId:
+        next.userId,
+
+      bookId:
+        next.bookId,
+
+      copyId:
+        copy.id,
+    };
   };
 
 const hasWaitingReservations =
@@ -210,18 +274,6 @@ const hasWaitingReservations =
     return count > 0;
   };
 
-/*
- * Cancel waiting / ready reservation.
- *
- * READY cancellation:
- *
- * another member waiting
- * reserved -> reserved
- *
- * nobody waiting
- * reserved -> available
- * availableCopies + 1
- */
 const cancelReservation =
   async (
     id,
@@ -285,6 +337,11 @@ const cancelReservation =
           transaction: t,
         });
 
+        emitReservationChange(
+          reservation.userId,
+          t
+        );
+
         if (
           wasReady &&
           reservation.copyId
@@ -344,6 +401,10 @@ const cancelReservation =
                   transaction: t,
                 });
               }
+
+              emitInventoryChange(
+                t
+              );
             }
           }
         }
@@ -353,9 +414,6 @@ const cancelReservation =
     );
   };
 
-/*
- * Member reservation history with queue position.
- */
 const listMyReservations =
   async (
     userId,
@@ -467,14 +525,6 @@ const listMyReservations =
     };
   };
 
-/*
- * Staff reservation list.
- *
- * Part 5 adds:
- * - member details
- * - held copy/barcode
- * - queue position
- */
 const listAllReservations =
   async (query) => {
     const {
@@ -610,9 +660,6 @@ const listAllReservations =
     };
   };
 
-/*
- * Expire ready pickup holds.
- */
 const expireStaleHolds =
   async () => {
     const candidates =
@@ -675,6 +722,11 @@ const expireStaleHolds =
           });
 
           expiredCount += 1;
+
+          emitReservationChange(
+            reservation.userId,
+            t
+          );
 
           if (
             !reservation.copyId
@@ -740,6 +792,10 @@ const expireStaleHolds =
                 transaction: t,
               });
             }
+
+            emitInventoryChange(
+              t
+            );
           }
         }
       );
