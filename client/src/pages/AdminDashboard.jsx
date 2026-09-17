@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
 } from 'react';
@@ -30,6 +31,14 @@ import {
   downloadOverdueCsv,
   downloadInventoryCsv,
 } from '../api/reports.api';
+
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
 
 const InventoryItem = ({
   label,
@@ -101,36 +110,45 @@ export default function AdminDashboard() {
     setExportingInventory,
   ] = useState(false);
 
-  useEffect(() => {
-    let cancelled =
-      false;
+  const reportsVersion =
+    useResourceVersion(
+      'reports'
+    );
 
-    Promise.all([
-      getDashboardSummary(),
+  const fetchDashboard =
+    useCallback(
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!silent) {
+          setIsLoading(
+            true
+          );
+        }
 
-      getTopBooks(5),
+        setError('');
 
-      getOverdueLoans(),
+        try {
+          const [
+            summaryResult,
+            topBooksResult,
+            overdueResult,
+            revenueResult,
+            circulationResult,
+          ] =
+            await Promise.all([
+              getDashboardSummary(),
 
-      getFineRevenue(),
+              getTopBooks(5),
 
-      getCirculationStats(
-        30
-      ),
-    ])
-      .then(
-        ([
-          summaryResult,
-          topBooksResult,
-          overdueResult,
-          revenueResult,
-          circulationResult,
-        ]) => {
-          if (
-            cancelled
-          ) {
-            return;
-          }
+              getOverdueLoans(),
+
+              getFineRevenue(),
+
+              getCirculationStats(
+                30
+              ),
+            ]);
 
           setSummary(
             summaryResult
@@ -151,39 +169,38 @@ export default function AdminDashboard() {
           setCirculation(
             circulationResult
           );
-        }
-      )
-      .catch(
-        (err) => {
-          if (
-            !cancelled
-          ) {
-            setError(
-              err.response
-                ?.data
-                ?.message ||
-                'Could not load the dashboard.'
-            );
-          }
-        }
-      )
-      .finally(
-        () => {
-          if (
-            !cancelled
-          ) {
+        } catch (err) {
+          setError(
+            err.response
+              ?.data
+              ?.message ||
+              'Could not load the dashboard.'
+          );
+        } finally {
+          if (!silent) {
             setIsLoading(
               false
             );
           }
         }
-      );
+      },
+      []
+    );
 
-    return () => {
-      cancelled =
-        true;
-    };
-  }, []);
+  useEffect(() => {
+    fetchDashboard();
+  }, [
+    fetchDashboard,
+  ]);
+
+  useRealtimeChange(
+    reportsVersion,
+    () => {
+      fetchDashboard({
+        silent: true,
+      });
+    }
+  );
 
   const handleOverdueExport =
     async () => {

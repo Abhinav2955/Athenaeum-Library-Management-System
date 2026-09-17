@@ -80,9 +80,13 @@ export function AuthProvider({
 
           return currentUser;
         } catch (error) {
-          if (
+          const status =
             error.response
-              ?.status === 401
+              ?.status;
+
+          if (
+            status === 401 ||
+            status === 403
           ) {
             clearSession();
           }

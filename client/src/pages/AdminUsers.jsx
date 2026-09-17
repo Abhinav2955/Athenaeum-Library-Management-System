@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
 } from 'react';
@@ -18,6 +19,14 @@ import {
   updateMembershipStatus,
   updateUserRole,
 } from '../api/users.api';
+
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
 
 const formatDate =
   (value) => {
@@ -114,41 +123,71 @@ export default function AdminUsers() {
     setUpdatingId,
   ] = useState(null);
 
+  const usersVersion =
+    useResourceVersion(
+      'users'
+    );
+
   const loadUsers =
-    async (
-      page = 1
-    ) => {
-      setLoading(true);
-      setError('');
+    useCallback(
+      async (
+        currentPage = 1,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!silent) {
+          setLoading(
+            true
+          );
+        }
 
-      try {
-        const result =
-          await getUsers({
-            page,
-            limit:
-              meta.limit,
-            search,
-            role,
-            membershipStatus,
-          });
+        setError('');
 
-        setUsers(
-          result.users
-        );
+        try {
+          const result =
+            await getUsers({
+              page:
+                currentPage,
 
-        setMeta(
-          result.meta
-        );
-      } catch (err) {
-        setError(
-          err.response?.data
-            ?.message ||
-            'Could not load users.'
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+              limit:
+                meta.limit,
+
+              search,
+
+              role,
+
+              membershipStatus,
+            });
+
+          setUsers(
+            result.users
+          );
+
+          setMeta(
+            result.meta
+          );
+        } catch (err) {
+          setError(
+            err.response?.data
+              ?.message ||
+              'Could not load users.'
+          );
+        } finally {
+          if (!silent) {
+            setLoading(
+              false
+            );
+          }
+        }
+      },
+      [
+        meta.limit,
+        search,
+        role,
+        membershipStatus,
+      ]
+    );
 
   useEffect(() => {
     loadUsers(1);
@@ -156,7 +195,20 @@ export default function AdminUsers() {
     search,
     role,
     membershipStatus,
+    loadUsers,
   ]);
+
+  useRealtimeChange(
+    usersVersion,
+    () => {
+      loadUsers(
+        meta.page,
+        {
+          silent: true,
+        }
+      );
+    }
+  );
 
   const handleSearch =
     (event) => {

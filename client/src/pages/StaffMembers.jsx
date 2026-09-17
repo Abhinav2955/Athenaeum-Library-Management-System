@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useState,
 } from 'react';
 
@@ -16,6 +17,14 @@ import {
   getMemberById,
   updateMembershipStatus,
 } from '../api/members.api';
+
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
 
 const formatDate = (
   value
@@ -250,6 +259,172 @@ export default function StaffMembers() {
     setSuccess,
   ] = useState('');
 
+  const usersVersion =
+    useResourceVersion(
+      'users'
+    );
+
+  const loansVersion =
+    useResourceVersion(
+      'loans'
+    );
+
+  const reservationsVersion =
+    useResourceVersion(
+      'reservations'
+    );
+
+  const finesVersion =
+    useResourceVersion(
+      'fines'
+    );
+
+  const runSearch =
+    useCallback(
+      async (
+        term,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!silent) {
+          setSearching(
+            true
+          );
+        }
+
+        try {
+          const members =
+            await searchMembers(
+              term,
+              20
+            );
+
+          setResults(
+            members
+          );
+
+          return members;
+        } catch (err) {
+          if (!silent) {
+            setError(
+              err.response?.data
+                ?.message ||
+                'Could not search members.'
+            );
+          }
+
+          return [];
+        } finally {
+          if (!silent) {
+            setSearching(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
+
+  const loadProfile =
+    useCallback(
+      async (
+        memberId,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!silent) {
+          setLoadingProfile(
+            true
+          );
+        }
+
+        setError('');
+
+        try {
+          const result =
+            await getMemberById(
+              memberId
+            );
+
+          setProfile(
+            result
+          );
+
+          setSelectedMemberId(
+            memberId
+          );
+        } catch (err) {
+          setError(
+            err.response?.data
+              ?.message ||
+              'Could not load member profile.'
+          );
+        } finally {
+          if (!silent) {
+            setLoadingProfile(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
+
+  useRealtimeChange(
+    usersVersion,
+    () => {
+      const term =
+        search.trim();
+
+      if (
+        term.length >= 2 &&
+        results.length > 0
+      ) {
+        runSearch(
+          term,
+          {
+            silent: true,
+          }
+        );
+      }
+
+      if (
+        selectedMemberId
+      ) {
+        loadProfile(
+          selectedMemberId,
+          {
+            silent: true,
+          }
+        );
+      }
+    }
+  );
+
+  useRealtimeChange(
+    [
+      loansVersion,
+      reservationsVersion,
+      finesVersion,
+    ],
+    () => {
+      if (
+        !selectedMemberId
+      ) {
+        return;
+      }
+
+      loadProfile(
+        selectedMemberId,
+        {
+          silent: true,
+        }
+      );
+    }
+  );
+
   const handleSearch =
     async (event) => {
       event.preventDefault();
@@ -270,70 +445,17 @@ export default function StaffMembers() {
         return;
       }
 
-      setSearching(true);
-
-      try {
-        const members =
-          await searchMembers(
-            term,
-            20
-          );
-
-        setResults(
-          members
+      const members =
+        await runSearch(
+          term
         );
 
-        if (
-          members.length ===
-          0
-        ) {
-          setError(
-            'No matching members found.'
-          );
-        }
-      } catch (err) {
+      if (
+        members.length ===
+        0
+      ) {
         setError(
-          err.response?.data
-            ?.message ||
-            'Could not search members.'
-        );
-      } finally {
-        setSearching(false);
-      }
-    };
-
-  const loadProfile =
-    async (
-      memberId
-    ) => {
-      setLoadingProfile(
-        true
-      );
-
-      setError('');
-
-      try {
-        const result =
-          await getMemberById(
-            memberId
-          );
-
-        setProfile(
-          result
-        );
-
-        setSelectedMemberId(
-          memberId
-        );
-      } catch (err) {
-        setError(
-          err.response?.data
-            ?.message ||
-            'Could not load member profile.'
-        );
-      } finally {
-        setLoadingProfile(
-          false
+          'No matching members found.'
         );
       }
     };
@@ -365,16 +487,13 @@ export default function StaffMembers() {
           `Membership changed to ${nextStatus}.`
         );
 
-        /*
-         * Reload complete member state.
-         */
         await loadProfile(
-          profile.member.id
+          profile.member.id,
+          {
+            silent: true,
+          }
         );
 
-        /*
-         * Also update search-card status.
-         */
         setResults(
           (previous) =>
             previous.map(
@@ -383,7 +502,6 @@ export default function StaffMembers() {
                 profile.member.id
                   ? {
                       ...member,
-
                       membershipStatus:
                         nextStatus,
                     }
