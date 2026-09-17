@@ -13,45 +13,91 @@ const {
 } = require('../utils/token');
 
 const {
+  User,
+} = require('../database/models');
+
+const {
   setIO,
 } = require('./io');
 
-const authenticateSocket = (
-  socket,
-  next
-) => {
-  const token =
-    socket.handshake.auth?.token;
+const authenticateSocket =
+  async (
+    socket,
+    next
+  ) => {
+    const token =
+      socket.handshake.auth?.token;
 
-  if (!token) {
-    return next(
-      new Error(
-        'Authentication token missing'
-      )
-    );
-  }
+    if (!token) {
+      return next(
+        new Error(
+          'Authentication token missing'
+        )
+      );
+    }
 
-  try {
-    const payload =
-      verifyAccessToken(
-        token
+    let payload;
+
+    try {
+      payload =
+        verifyAccessToken(
+          token
+        );
+    } catch {
+      return next(
+        new Error(
+          'Invalid or expired token'
+        )
+      );
+    }
+
+    let user;
+
+    try {
+      user =
+        await User.findByPk(
+          payload.sub
+        );
+    } catch (error) {
+      logger.error(
+        'Socket authentication failed',
+        error
       );
 
+      return next(
+        new Error(
+          'Authentication failed'
+        )
+      );
+    }
+
+    if (!user) {
+      return next(
+        new Error(
+          'User no longer exists'
+        )
+      );
+    }
+
+    if (
+      user.membershipStatus ===
+      'suspended'
+    ) {
+      return next(
+        new Error(
+          'Account is suspended'
+        )
+      );
+    }
+
     socket.userId =
-      payload.sub;
+      user.id;
 
     socket.userRole =
-      payload.role;
+      user.role;
 
     return next();
-  } catch {
-    return next(
-      new Error(
-        'Invalid or expired token'
-      )
-    );
-  }
-};
+  };
 
 const initSocket = (
   httpServer

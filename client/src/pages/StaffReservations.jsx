@@ -23,6 +23,14 @@ import {
   cancelReservation,
 } from '../api/reservations.api';
 
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
+
 const STATUS_TABS = [
   {
     key: 'all',
@@ -130,9 +138,7 @@ const ReservationCard = ({
                 reservation.status
               )}`}
             >
-              {
-                reservation.status
-              }
+              {reservation.status}
             </span>
 
             {reservation.status ===
@@ -256,17 +262,17 @@ const ReservationCard = ({
         <div className="flex shrink-0 flex-row gap-2 lg:flex-col">
           {reservation.status ===
             'ready' && (
-            <Button
-              variant="brass"
-              onClick={() =>
-                onOpenDesk(
-                  reservation
-                )
-              }
-            >
-              Open Circulation
-            </Button>
-          )}
+              <Button
+                variant="brass"
+                onClick={() =>
+                  onOpenDesk(
+                    reservation
+                  )
+                }
+              >
+                Open Circulation
+              </Button>
+            )}
 
           {canCancel && (
             <Button
@@ -332,10 +338,20 @@ export default function StaffReservations() {
     setCancellingId,
   ] = useState(null);
 
+  const reservationsVersion =
+    useResourceVersion(
+      'reservations'
+    );
+
   const loadReservations =
     useCallback(
-      async () => {
-        setLoading(true);
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!silent) {
+          setLoading(true);
+        }
+
         setError('');
 
         try {
@@ -403,7 +419,9 @@ export default function StaffReservations() {
               Array.from(
                 new Map(
                   combined.map(
-                    (reservation) => [
+                    (
+                      reservation
+                    ) => [
                       reservation.id,
                       reservation,
                     ]
@@ -446,7 +464,9 @@ export default function StaffReservations() {
               'Could not load reservations.'
           );
         } finally {
-          setLoading(false);
+          if (!silent) {
+            setLoading(false);
+          }
         }
       },
       [activeTab]
@@ -457,6 +477,15 @@ export default function StaffReservations() {
   }, [
     loadReservations,
   ]);
+
+  useRealtimeChange(
+    reservationsVersion,
+    () => {
+      loadReservations({
+        silent: true,
+      });
+    }
+  );
 
   const filteredReservations =
     useMemo(() => {
@@ -533,7 +562,9 @@ export default function StaffReservations() {
           `Reservation for "${reservation.book?.title || 'book'}" cancelled.`
         );
 
-        await loadReservations();
+        await loadReservations({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response
@@ -550,14 +581,6 @@ export default function StaffReservations() {
 
   const handleOpenDesk =
     () => {
-      /*
-       * Part 3 circulation desk performs the
-       * actual physical checkout.
-       *
-       * The backend automatically detects the
-       * member's ready reservation and checks
-       * out their held copy.
-       */
       navigate(
         '/admin/circulation'
       );

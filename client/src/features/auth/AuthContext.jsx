@@ -18,54 +18,107 @@ const AuthContext = createContext(null);
 export function AuthProvider({
   children,
 }) {
-  const [user, setUser] = useState(null);
+  const [
+    user,
+    setUser,
+  ] = useState(null);
 
   const [
     accessToken,
     setAccessTokenState,
   ] = useState(null);
 
-  const [loading, setLoading] = useState(true);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const establishSession = useCallback(
-    ({
-      user: sessionUser,
-      accessToken: token,
-    }) => {
-      setUser(sessionUser);
-      setAccessTokenState(token);
-      setAccessToken(token);
-    },
-    []
-  );
+  const establishSession =
+    useCallback(
+      ({
+        user: sessionUser,
+        accessToken: token,
+      }) => {
+        setUser(
+          sessionUser
+        );
 
-  const clearSession = useCallback(() => {
-    setUser(null);
-    setAccessTokenState(null);
-    setAccessToken(null);
-  }, []);
+        setAccessTokenState(
+          token
+        );
+
+        setAccessToken(
+          token
+        );
+      },
+      []
+    );
+
+  const clearSession =
+    useCallback(() => {
+      setUser(null);
+
+      setAccessTokenState(
+        null
+      );
+
+      setAccessToken(
+        null
+      );
+    }, []);
+
+  const refreshUser =
+    useCallback(
+      async () => {
+        try {
+          const currentUser =
+            await authApi.getMe();
+
+          setUser(
+            currentUser
+          );
+
+          return currentUser;
+        } catch (error) {
+          if (
+            error.response
+              ?.status === 401
+          ) {
+            clearSession();
+          }
+
+          throw error;
+        }
+      },
+      [clearSession]
+    );
 
   useEffect(() => {
     let mounted = true;
 
-    const bootstrap = async () => {
-      try {
-        const result =
-          await authApi.refreshSession();
+    const bootstrap =
+      async () => {
+        try {
+          const result =
+            await authApi.refreshSession();
 
-        if (mounted) {
-          establishSession(result);
+          if (mounted) {
+            establishSession(
+              result
+            );
+          }
+        } catch {
+          if (mounted) {
+            clearSession();
+          }
+        } finally {
+          if (mounted) {
+            setLoading(
+              false
+            );
+          }
         }
-      } catch {
-        if (mounted) {
-          clearSession();
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
+      };
 
     bootstrap();
 
@@ -77,77 +130,106 @@ export function AuthProvider({
     clearSession,
   ]);
 
-  const login = useCallback(
-    async (credentials) => {
-      const result =
-        await authApi.login(credentials);
+  const login =
+    useCallback(
+      async (
+        credentials
+      ) => {
+        const result =
+          await authApi.login(
+            credentials
+          );
 
-      establishSession(result);
+        establishSession(
+          result
+        );
 
-      return result;
-    },
-    [establishSession]
-  );
+        return result;
+      },
+      [establishSession]
+    );
 
-  const register = useCallback(
-    async (payload) => {
-      return authApi.register(payload);
-    },
-    []
-  );
+  const register =
+    useCallback(
+      async (
+        payload
+      ) => {
+        return authApi.register(
+          payload
+        );
+      },
+      []
+    );
 
-  const verifyAndLogin = useCallback(
-    async (token) => {
-      const result =
-        await authApi.verifyEmail(token);
+  const verifyAndLogin =
+    useCallback(
+      async (
+        token
+      ) => {
+        const result =
+          await authApi.verifyEmail(
+            token
+          );
 
-      establishSession(result);
+        establishSession(
+          result
+        );
 
-      return result;
-    },
-    [establishSession]
-  );
+        return result;
+      },
+      [establishSession]
+    );
 
-  const logout = useCallback(
-    async () => {
-      try {
-        await authApi.logout();
-      } finally {
-        clearSession();
-      }
-    },
-    [clearSession]
-  );
+  const logout =
+    useCallback(
+      async () => {
+        try {
+          await authApi.logout();
+        } finally {
+          clearSession();
+        }
+      },
+      [clearSession]
+    );
 
-  const value = useMemo(
-    () => ({
-      user,
-      accessToken,
-      loading,
-      isAuthenticated: Boolean(
-        user && accessToken
-      ),
-      login,
-      register,
-      verifyAndLogin,
-      logout,
-      establishSession,
-    }),
-    [
-      user,
-      accessToken,
-      loading,
-      login,
-      register,
-      verifyAndLogin,
-      logout,
-      establishSession,
-    ]
-  );
+  const value =
+    useMemo(
+      () => ({
+        user,
+        accessToken,
+        loading,
+
+        isAuthenticated:
+          Boolean(
+            user &&
+              accessToken
+          ),
+
+        login,
+        register,
+        verifyAndLogin,
+        logout,
+        establishSession,
+        refreshUser,
+      }),
+      [
+        user,
+        accessToken,
+        loading,
+        login,
+        register,
+        verifyAndLogin,
+        logout,
+        establishSession,
+        refreshUser,
+      ]
+    );
 
   return (
     <AuthContext.Provider
-      value={value}
+      value={
+        value
+      }
     >
       {children}
     </AuthContext.Provider>
@@ -156,7 +238,9 @@ export function AuthProvider({
 
 export function useAuth() {
   const context =
-    useContext(AuthContext);
+    useContext(
+      AuthContext
+    );
 
   if (!context) {
     throw new Error(

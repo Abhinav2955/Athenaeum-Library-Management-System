@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 
@@ -21,8 +20,12 @@ import {
 } from '../api/reservations.api';
 
 import {
-  useNotifications,
+  useResourceVersion,
 } from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
 
 const FILTERS = [
   {
@@ -97,20 +100,20 @@ export default function Reservations() {
     setCancelErrors,
   ] = useState({});
 
-  const {
-    notifications,
-  } = useNotifications();
-
-  const lastReadyNotificationId =
-    useRef(null);
+  const reservationsVersion =
+    useResourceVersion(
+      'reservations'
+    );
 
   const fetchReservations =
     useCallback(
       async (
         currentPage,
-        showLoading = true
+        {
+          silent = false,
+        } = {}
       ) => {
-        if (showLoading) {
+        if (!silent) {
           setIsLoading(true);
         }
 
@@ -146,7 +149,7 @@ export default function Reservations() {
               'Could not load your reservations.'
           );
         } finally {
-          if (showLoading) {
+          if (!silent) {
             setIsLoading(false);
           }
         }
@@ -163,37 +166,17 @@ export default function Reservations() {
     fetchReservations,
   ]);
 
-  useEffect(() => {
-    const readyNotification =
-      notifications.find(
-        (notification) =>
-          notification.type ===
-          'reservation_ready'
+  useRealtimeChange(
+    reservationsVersion,
+    () => {
+      fetchReservations(
+        page,
+        {
+          silent: true,
+        }
       );
-
-    if (!readyNotification) {
-      return;
     }
-
-    if (
-      lastReadyNotificationId.current ===
-      readyNotification.id
-    ) {
-      return;
-    }
-
-    lastReadyNotificationId.current =
-      readyNotification.id;
-
-    fetchReservations(
-      page,
-      false
-    );
-  }, [
-    notifications,
-    page,
-    fetchReservations,
-  ]);
+  );
 
   const filteredReservations =
     useMemo(() => {
@@ -244,7 +227,9 @@ export default function Reservations() {
 
         await fetchReservations(
           page,
-          false
+          {
+            silent: true,
+          }
         );
       } catch (err) {
         const message =
@@ -361,9 +346,7 @@ export default function Reservations() {
 
         <div className="mt-6">
           <Pagination
-            meta={
-              meta
-            }
+            meta={meta}
             onPageChange={
               setPage
             }

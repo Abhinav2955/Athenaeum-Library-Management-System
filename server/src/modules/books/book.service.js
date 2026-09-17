@@ -18,6 +18,10 @@ const {
   buildPaginationMeta,
 } = require('../../utils/pagination');
 
+const {
+  emitDataChanged,
+} = require('../../sockets/io');
+
 const includeRelations = [
   {
     model: Author,
@@ -38,6 +42,31 @@ const includeRelations = [
   },
 ];
 
+const emitBookChange = (
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+      ],
+      authenticated: true,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'books',
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
+
 const createBook = async (data) => {
   const existing = await Book.findOne({
     where: {
@@ -52,15 +81,6 @@ const createBook = async (data) => {
   }
 
   return sequelize.transaction(async (t) => {
-    /*
-     * Important:
-     *
-     * Book represents the catalog/title.
-     * BookCopy represents an actual physical copy.
-     *
-     * Therefore creating a Book must NOT automatically
-     * increase inventory.
-     */
     const book = await Book.create(
       {
         isbn: data.isbn,
@@ -97,12 +117,17 @@ const createBook = async (data) => {
       );
     }
 
-    return getBookById(
-      book.id,
-      {
-        transaction: t,
-      }
-    );
+    const createdBook =
+      await getBookById(
+        book.id,
+        {
+          transaction: t,
+        }
+      );
+
+    emitBookChange(t);
+
+    return createdBook;
   });
 };
 
@@ -276,27 +301,12 @@ const updateBook = async (
 
   return sequelize.transaction(
     async (t) => {
-      /*
-       * Make a copy so we can safely remove
-       * relationship and inventory fields.
-       */
       const bookFields = {
         ...data,
       };
 
-      /*
-       * These fields are handled separately.
-       */
       delete bookFields.authorIds;
       delete bookFields.categoryIds;
-
-      /*
-       * NEVER allow book metadata editing to
-       * manually alter inventory counters.
-       *
-       * Inventory must only change when physical
-       * BookCopy rows change.
-       */
       delete bookFields.totalCopies;
       delete bookFields.availableCopies;
 
@@ -325,12 +335,17 @@ const updateBook = async (
         );
       }
 
-      return getBookById(
-        book.id,
-        {
-          transaction: t,
-        }
-      );
+      const updatedBook =
+        await getBookById(
+          book.id,
+          {
+            transaction: t,
+          }
+        );
+
+      emitBookChange(t);
+
+      return updatedBook;
     }
   );
 };
@@ -345,7 +360,15 @@ const deleteBook = async (id) => {
     );
   }
 
-  await book.destroy();
+  await sequelize.transaction(
+    async (t) => {
+      await book.destroy({
+        transaction: t,
+      });
+
+      emitBookChange(t);
+    }
+  );
 };
 
 const getRelatedBooks = async (

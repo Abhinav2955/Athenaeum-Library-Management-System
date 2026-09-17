@@ -160,6 +160,8 @@ const addCopies = async ({
         transaction: t,
       });
 
+      emitInventoryChange(t);
+
       return copies;
     }
   );
@@ -434,7 +436,7 @@ const checkout = async (
       const now =
         new Date();
 
-            const record =
+      const record =
         await BorrowRecord.create(
           {
             copyId:
@@ -608,7 +610,7 @@ const returnBook = async (
         }
       }
 
-           let fine = null;
+      let fine = null;
 
       if (wasOverdue) {
         fine =
@@ -750,7 +752,7 @@ const markLoanLost = async (
             1
         );
 
-            await book.save({
+      await book.save({
         transaction: t,
       });
 
@@ -901,16 +903,16 @@ const renew = async (
 
   record.renewedCount += 1;
 
-        await record.save();
+  await record.save();
 
-      emitMemberLoanChange(
-        record.userId,
-        [
-          'loans',
-        ]
-      );
+  emitMemberLoanChange(
+    record.userId,
+    [
+      'loans',
+    ]
+  );
 
-      return record;
+  return record;
 };
 
 const listMyLoans = async (
@@ -1170,7 +1172,6 @@ const updateCopyStatus = async (
           }
         );
 
-      
       if (
         oldStatus ===
           'available' &&
@@ -1190,6 +1191,7 @@ const updateCopyStatus = async (
             book.availableCopies -
               1
           );
+
         await book.save({
           transaction: t,
         });
@@ -1199,8 +1201,7 @@ const updateCopyStatus = async (
         return copy;
       }
 
-     
-            if (
+      if (
         nextStatus !==
         'available'
       ) {
@@ -1216,8 +1217,7 @@ const updateCopyStatus = async (
         return copy;
       }
 
-      
-            const fulfilled =
+      const fulfilled =
         await reservationService
           .tryFulfillNextReservation(
             copy.bookId,
@@ -1231,7 +1231,6 @@ const updateCopyStatus = async (
         return copy;
       }
 
-      
       copy.status =
         'available';
 
@@ -1249,7 +1248,7 @@ const updateCopyStatus = async (
             1
         );
 
-            await book.save({
+      await book.save({
         transaction: t,
       });
 
@@ -1321,7 +1320,7 @@ const retireCopy = async (
             1
         );
 
-            await book.save({
+      await book.save({
         transaction: t,
       });
 

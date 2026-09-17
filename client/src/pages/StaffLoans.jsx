@@ -21,6 +21,14 @@ import {
   markLoanLost,
 } from '../api/borrow.api';
 
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
+
 const STATUS_TABS = [
   {
     key: 'all',
@@ -372,10 +380,20 @@ export default function StaffLoans() {
     setWorkingLoanId,
   ] = useState(null);
 
+  const loansVersion =
+    useResourceVersion(
+      'loans'
+    );
+
   const loadLoans =
     useCallback(
-      async () => {
-        setLoading(true);
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!silent) {
+          setLoading(true);
+        }
+
         setError('');
 
         try {
@@ -475,7 +493,9 @@ export default function StaffLoans() {
               'Could not load loan records.'
           );
         } finally {
-          setLoading(false);
+          if (!silent) {
+            setLoading(false);
+          }
         }
       },
       [activeTab]
@@ -483,7 +503,18 @@ export default function StaffLoans() {
 
   useEffect(() => {
     loadLoans();
-  }, [loadLoans]);
+  }, [
+    loadLoans,
+  ]);
+
+  useRealtimeChange(
+    loansVersion,
+    () => {
+      loadLoans({
+        silent: true,
+      });
+    }
+  );
 
   const filteredLoans =
     useMemo(() => {
@@ -548,7 +579,9 @@ export default function StaffLoans() {
           )}.`
         );
 
-        await loadLoans();
+        await loadLoans({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data
@@ -585,7 +618,9 @@ export default function StaffLoans() {
           result.message
         );
 
-        await loadLoans();
+        await loadLoans({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data
@@ -617,7 +652,9 @@ export default function StaffLoans() {
           `"${loan.copy?.book?.title || 'Book'}" marked as lost.`
         );
 
-        await loadLoans();
+        await loadLoans({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data

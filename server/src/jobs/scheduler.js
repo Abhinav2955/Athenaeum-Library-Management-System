@@ -31,10 +31,12 @@ const {
   './queues/email.queue'
 );
 
+const {
+  emitDataChanged,
+} = require('../sockets/io');
 
 const DUE_SOON_WINDOW_HOURS =
   48;
-
 
 const safelyQueueEmail =
   async (payload) => {
@@ -62,7 +64,6 @@ const safelyQueueEmail =
       return false;
     }
   };
-
 
 const buildReminderEmail =
   ({
@@ -92,7 +93,6 @@ const buildReminderEmail =
       </div>
     `;
   };
-
 
 const flagOverdueLoans =
   async () => {
@@ -157,7 +157,6 @@ const flagOverdueLoans =
       return 0;
     }
 
-    
     await BorrowRecord.update(
       {
         status:
@@ -175,6 +174,36 @@ const flagOverdueLoans =
       }
     );
 
+    const affectedUserIds =
+      [
+        ...new Set(
+          newlyOverdue.map(
+            (record) =>
+              record.userId
+          )
+        ),
+      ];
+
+    for (
+      const userId of
+      affectedUserIds
+    ) {
+      emitDataChanged({
+        resources: [
+          'loans',
+        ],
+        userId,
+      });
+    }
+
+    emitDataChanged({
+      resources: [
+        'loans',
+        'reports',
+      ],
+      staff: true,
+    });
+
     let notificationCount =
       0;
 
@@ -182,10 +211,6 @@ const flagOverdueLoans =
       const record of
       newlyOverdue
     ) {
-      /*
-       * Overdue should only be announced once per
-       * loan.
-       */
       const alreadyNotified =
         await notificationService
           .hasExistingNotification(
@@ -230,7 +255,6 @@ const flagOverdueLoans =
 
       notificationCount += 1;
 
-      
       if (
         record.borrower
           ?.email
@@ -268,7 +292,6 @@ const flagOverdueLoans =
 
     return newlyOverdue.length;
   };
-
 
 const notifyDueSoon =
   async () => {
@@ -344,7 +367,6 @@ const notifyDueSoon =
       const record of
       dueSoonLoans
     ) {
-      
       const currentWindowStart =
         new Date(
           new Date(
@@ -450,7 +472,6 @@ const notifyDueSoon =
     return notifiedCount;
   };
 
-
 const expireReservationHolds =
   async () => {
     const count =
@@ -465,7 +486,6 @@ const expireReservationHolds =
 
     return count;
   };
-
 
 const runMaintenanceSweep =
   async () => {
@@ -490,9 +510,6 @@ const runMaintenanceSweep =
 
 const startScheduledJobs =
   () => {
-    /*
-     * Run hourly at minute 0.
-     */
     cron.schedule(
       '0 * * * *',
 

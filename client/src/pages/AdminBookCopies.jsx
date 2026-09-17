@@ -32,6 +32,14 @@ import {
   updateCopyStatus,
 } from '../api/borrow.api';
 
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
+
 const statusTone = {
   available:
     'success',
@@ -102,10 +110,27 @@ export default function AdminBookCopies() {
     setWorkingCopyId,
   ] = useState(null);
 
+  const booksVersion =
+    useResourceVersion(
+      'books'
+    );
+
+  const inventoryVersion =
+    useResourceVersion(
+      'inventory'
+    );
+
   const fetchData =
     useCallback(
-      async () => {
-        setIsLoading(true);
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!silent) {
+          setIsLoading(
+            true
+          );
+        }
+
         setError('');
 
         try {
@@ -137,9 +162,11 @@ export default function AdminBookCopies() {
               'Could not load this book.'
           );
         } finally {
-          setIsLoading(
-            false
-          );
+          if (!silent) {
+            setIsLoading(
+              false
+            );
+          }
         }
       },
       [bookId]
@@ -147,7 +174,21 @@ export default function AdminBookCopies() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [
+    fetchData,
+  ]);
+
+  useRealtimeChange(
+    [
+      booksVersion,
+      inventoryVersion,
+    ],
+    () => {
+      fetchData({
+        silent: true,
+      });
+    }
+  );
 
   const handleAddCopies =
     async (event) => {
@@ -173,14 +214,15 @@ export default function AdminBookCopies() {
         });
 
         setQuantity('1');
-
         setShelfLocation('');
 
         setSuccess(
           'Physical copies added successfully.'
         );
 
-        await fetchData();
+        await fetchData({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data
@@ -217,7 +259,9 @@ export default function AdminBookCopies() {
           )}.`
         );
 
-        await fetchData();
+        await fetchData({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data
@@ -257,7 +301,9 @@ export default function AdminBookCopies() {
           `${copy.barcode} retired from inventory.`
         );
 
-        await fetchData();
+        await fetchData({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data

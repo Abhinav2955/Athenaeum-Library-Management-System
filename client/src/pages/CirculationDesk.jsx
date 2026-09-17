@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useState,
 } from 'react';
 
@@ -24,6 +25,14 @@ import {
   listAllLoans,
   returnLoan,
 } from '../api/borrow.api';
+
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
 
 const MemberCard = ({
   member,
@@ -284,36 +293,139 @@ export default function CirculationDesk() {
     setSuccess,
   ] = useState('');
 
-  const clearMessages = () => {
-    setError('');
-    setSuccess('');
-  };
+  const loansVersion =
+    useResourceVersion(
+      'loans'
+    );
 
-  const resetWorkArea = () => {
-    setSelectedMember(null);
+  const booksVersion =
+    useResourceVersion(
+      'books'
+    );
 
-    setMemberResults([]);
+  const inventoryVersion =
+    useResourceVersion(
+      'inventory'
+    );
 
-    setMemberSearch('');
+  const usersVersion =
+    useResourceVersion(
+      'users'
+    );
 
-    setBookSearch('');
+  const clearMessages =
+    () => {
+      setError('');
+      setSuccess('');
+    };
 
-    setBooks([]);
+  const resetWorkArea =
+    () => {
+      setSelectedMember(
+        null
+      );
 
-    setLoans([]);
+      setMemberResults(
+        []
+      );
 
-    setError('');
+      setMemberSearch(
+        ''
+      );
 
-    setSuccess('');
-  };
+      setBookSearch(
+        ''
+      );
 
-  const switchMode = (
-    nextMode
-  ) => {
-    setMode(nextMode);
+      setBooks(
+        []
+      );
 
-    resetWorkArea();
-  };
+      setLoans(
+        []
+      );
+
+      setError('');
+      setSuccess('');
+    };
+
+  const switchMode =
+    (
+      nextMode
+    ) => {
+      setMode(
+        nextMode
+      );
+
+      resetWorkArea();
+    };
+
+  const searchForMembers =
+    useCallback(
+      async (
+        term,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!silent) {
+          setSearchingMembers(
+            true
+          );
+        }
+
+        try {
+          const results =
+            await searchMembers(
+              term
+            );
+
+          setMemberResults(
+            results
+          );
+
+          setSelectedMember(
+            (current) => {
+              if (!current) {
+                return current;
+              }
+
+              const updated =
+                results.find(
+                  (member) =>
+                    member.id ===
+                    current.id
+                );
+
+              return (
+                updated ||
+                current
+              );
+            }
+          );
+
+          return results;
+        } catch (err) {
+          if (!silent) {
+            setError(
+              err.response
+                ?.data
+                ?.message ||
+                'Could not search members.'
+            );
+          }
+
+          return [];
+        } finally {
+          if (!silent) {
+            setSearchingMembers(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
 
   const handleMemberSearch =
     async (event) => {
@@ -334,125 +446,245 @@ export default function CirculationDesk() {
         return;
       }
 
-      setSearchingMembers(
-        true
-      );
-
-      try {
-        const results =
-          await searchMembers(
-            term
-          );
-
-        setMemberResults(
-          results
+      const results =
+        await searchForMembers(
+          term
         );
 
-        if (
-          results.length ===
-          0
-        ) {
-          setError(
-            'No matching members found.'
-          );
-        }
-      } catch (err) {
+      if (
+        results.length ===
+        0
+      ) {
         setError(
-          err.response
-            ?.data
-            ?.message ||
-            'Could not search members.'
-        );
-      } finally {
-        setSearchingMembers(
-          false
+          'No matching members found.'
         );
       }
     };
 
   const loadMemberLoans =
-    async (member) => {
-      setLoadingLoans(true);
+    useCallback(
+      async (
+        member,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!member) {
+          return;
+        }
 
-      try {
-        /*
-         * Fetch both statuses because an overdue
-         * loan may already have been changed by
-         * the scheduled job.
-         */
-        const [
-          activeResult,
-          overdueResult,
-        ] =
-          await Promise.all([
-            listAllLoans({
-              userId:
-                member.id,
+        if (!silent) {
+          setLoadingLoans(
+            true
+          );
+        }
 
-              status:
-                'active',
+        try {
+          const [
+            activeResult,
+            overdueResult,
+          ] =
+            await Promise.all([
+              listAllLoans({
+                userId:
+                  member.id,
 
-              limit: 100,
-            }),
+                status:
+                  'active',
 
-            listAllLoans({
-              userId:
-                member.id,
+                limit: 100,
+              }),
 
-              status:
-                'overdue',
+              listAllLoans({
+                userId:
+                  member.id,
 
-              limit: 100,
-            }),
-          ]);
+                status:
+                  'overdue',
 
-        const combined = [
-          ...(activeResult.records ||
-            []),
+                limit: 100,
+              }),
+            ]);
 
-          ...(overdueResult.records ||
-            []),
-        ];
+          const combined = [
+            ...(activeResult.records ||
+              []),
 
-        /*
-         * Avoid any accidental duplicate.
-         */
-        const unique =
-          Array.from(
-            new Map(
-              combined.map(
-                (loan) => [
-                  loan.id,
-                  loan,
-                ]
+            ...(overdueResult.records ||
+              []),
+          ];
+
+          const unique =
+            Array.from(
+              new Map(
+                combined.map(
+                  (loan) => [
+                    loan.id,
+                    loan,
+                  ]
+                )
+              ).values()
+            );
+
+          unique.sort(
+            (a, b) =>
+              new Date(
+                a.dueAt
+              ) -
+              new Date(
+                b.dueAt
               )
-            ).values()
           );
 
-        unique.sort(
-          (a, b) =>
-            new Date(
-              a.dueAt
-            ) -
-            new Date(
-              b.dueAt
-            )
-        );
+          setLoans(
+            unique
+          );
+        } catch (err) {
+          if (!silent) {
+            setError(
+              err.response
+                ?.data
+                ?.message ||
+                'Could not load this member’s loans.'
+            );
+          }
+        } finally {
+          if (!silent) {
+            setLoadingLoans(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
 
-        setLoans(unique);
-      } catch (err) {
-        setError(
-          err.response
-            ?.data
-            ?.message ||
-            'Could not load this member’s loans.'
-        );
-      } finally {
-        setLoadingLoans(
-          false
-        );
+  const searchForBooks =
+    useCallback(
+      async (
+        term,
+        {
+          silent = false,
+        } = {}
+      ) => {
+        if (!silent) {
+          setSearchingBooks(
+            true
+          );
+        }
+
+        try {
+          const result =
+            await listBooks({
+              search:
+                term,
+
+              page: 1,
+
+              limit: 10,
+            });
+
+          setBooks(
+            result.books ||
+              []
+          );
+
+          return (
+            result.books ||
+            []
+          );
+        } catch (err) {
+          if (!silent) {
+            setError(
+              err.response
+                ?.data
+                ?.message ||
+                'Could not search the catalog.'
+            );
+          }
+
+          return [];
+        } finally {
+          if (!silent) {
+            setSearchingBooks(
+              false
+            );
+          }
+        }
+      },
+      []
+    );
+
+  useRealtimeChange(
+    loansVersion,
+    () => {
+      if (
+        mode !==
+          'return' ||
+        !selectedMember
+      ) {
+        return;
       }
-    };
+
+      loadMemberLoans(
+        selectedMember,
+        {
+          silent: true,
+        }
+      );
+    }
+  );
+
+  useRealtimeChange(
+    [
+      booksVersion,
+      inventoryVersion,
+    ],
+    () => {
+      if (
+        mode !==
+          'issue' ||
+        !selectedMember
+      ) {
+        return;
+      }
+
+      const term =
+        bookSearch.trim();
+
+      if (!term) {
+        return;
+      }
+
+      searchForBooks(
+        term,
+        {
+          silent: true,
+        }
+      );
+    }
+  );
+
+  useRealtimeChange(
+    usersVersion,
+    () => {
+      const term =
+        memberSearch.trim();
+
+      if (
+        term.length < 2
+      ) {
+        return;
+      }
+
+      searchForMembers(
+        term,
+        {
+          silent: true,
+        }
+      );
+    }
+  );
 
   const handleMemberSelect =
     async (member) => {
@@ -462,11 +694,17 @@ export default function CirculationDesk() {
         member
       );
 
-      setBooks([]);
+      setBooks(
+        []
+      );
 
-      setBookSearch('');
+      setBookSearch(
+        ''
+      );
 
-      setLoans([]);
+      setLoans(
+        []
+      );
 
       if (
         mode ===
@@ -505,43 +743,17 @@ export default function CirculationDesk() {
         return;
       }
 
-      setSearchingBooks(
-        true
-      );
-
-      try {
-        const result =
-          await listBooks({
-            search:
-              term,
-
-            page: 1,
-
-            limit: 10,
-          });
-
-        setBooks(
-          result.books || []
+      const results =
+        await searchForBooks(
+          term
         );
 
-        if (
-          !result.books
-            ?.length
-        ) {
-          setError(
-            'No matching books found.'
-          );
-        }
-      } catch (err) {
+      if (
+        results.length ===
+        0
+      ) {
         setError(
-          err.response
-            ?.data
-            ?.message ||
-            'Could not search the catalog.'
-        );
-      } finally {
-        setSearchingBooks(
-          false
+          'No matching books found.'
         );
       }
     };
@@ -588,22 +800,17 @@ export default function CirculationDesk() {
           ).toLocaleDateString()}.`
         );
 
-        /*
-         * Refresh catalog counts after checkout.
-         */
-        const result =
-          await listBooks({
-            search:
-              bookSearch.trim(),
+        const term =
+          bookSearch.trim();
 
-            page: 1,
-
-            limit: 10,
-          });
-
-        setBooks(
-          result.books || []
-        );
+        if (term) {
+          await searchForBooks(
+            term,
+            {
+              silent: true,
+            }
+          );
+        }
       } catch (err) {
         setError(
           err.response
@@ -646,7 +853,10 @@ export default function CirculationDesk() {
           selectedMember
         ) {
           await loadMemberLoans(
-            selectedMember
+            selectedMember,
+            {
+              silent: true,
+            }
           );
         }
       } catch (err) {

@@ -10,6 +10,10 @@ const {
 const ApiError =
   require('../../utils/ApiError');
 
+const {
+  emitDataChanged,
+} = require('../../sockets/io');
+
 const safeUser = (
   user
 ) => {
@@ -18,6 +22,30 @@ const safeUser = (
   }
 
   return user.toSafeJSON();
+};
+
+const emitUserChange = (
+  userId
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'profile',
+        'users',
+      ],
+      userId,
+    }
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'users',
+        'reports',
+      ],
+      staff: true,
+    }
+  );
 };
 
 const listUsers =
@@ -199,6 +227,10 @@ const updateMembershipStatus =
       );
     }
 
+    emitUserChange(
+      user.id
+    );
+
     return safeUser(
       user
     );
@@ -282,6 +314,10 @@ const updateRole =
           },
         },
       }
+    );
+
+    emitUserChange(
+      user.id
     );
 
     return safeUser(

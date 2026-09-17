@@ -20,22 +20,27 @@ import {
   waiveFine,
 } from '../api/fines.api';
 
+import {
+  useResourceVersion,
+} from '../features/notifications/NotificationContext';
+
+import {
+  useRealtimeChange,
+} from '../features/notifications/useRealtimeChange';
+
 const STATUS_TABS = [
   {
     key: 'all',
     label: 'All',
   },
-
   {
     key: 'pending',
     label: 'Pending',
   },
-
   {
     key: 'paid',
     label: 'Paid',
   },
-
   {
     key: 'waived',
     label: 'Waived',
@@ -54,14 +59,9 @@ const formatDate = (
   ).toLocaleDateString(
     undefined,
     {
-      year:
-        'numeric',
-
-      month:
-        'short',
-
-      day:
-        'numeric',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     }
   );
 };
@@ -136,9 +136,7 @@ const FineCard = ({
                 fine.status
               )}`}
             >
-              {
-                fine.status
-              }
+              {fine.status}
             </span>
           </div>
 
@@ -379,10 +377,20 @@ export default function StaffFines() {
     setWaiverReasons,
   ] = useState({});
 
+  const finesVersion =
+    useResourceVersion(
+      'fines'
+    );
+
   const loadFines =
     useCallback(
-      async () => {
-        setLoading(true);
+      async ({
+        silent = false,
+      } = {}) => {
+        if (!silent) {
+          setLoading(true);
+        }
+
         setError('');
 
         try {
@@ -479,7 +487,9 @@ export default function StaffFines() {
               'Could not load fines.'
           );
         } finally {
-          setLoading(false);
+          if (!silent) {
+            setLoading(false);
+          }
         }
       },
       [activeTab]
@@ -490,6 +500,15 @@ export default function StaffFines() {
   }, [
     loadFines,
   ]);
+
+  useRealtimeChange(
+    finesVersion,
+    () => {
+      loadFines({
+        silent: true,
+      });
+    }
+  );
 
   const filteredFines =
     useMemo(() => {
@@ -572,7 +591,9 @@ export default function StaffFines() {
           )} recorded for ${fine.member?.name || 'member'}.`
         );
 
-        await loadFines();
+        await loadFines({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data
@@ -655,7 +676,9 @@ export default function StaffFines() {
           }
         );
 
-        await loadFines();
+        await loadFines({
+          silent: true,
+        });
       } catch (err) {
         setError(
           err.response?.data

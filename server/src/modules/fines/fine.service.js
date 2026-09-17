@@ -23,6 +23,10 @@ const razorpay =
 const env =
   require('../../config/env');
 
+const {
+  emitDataChanged,
+} = require('../../sockets/io');
+
 const FINE_RATE_PER_DAY = 0.5;
 const FINE_CAP = 20.0;
 
@@ -30,6 +34,32 @@ const MAX_UNPAID_BALANCE_FOR_CHECKOUT =
   10.0;
 
 const msPerDay = 86400000;
+
+const emitFineChange = (
+  userId,
+  transaction = null
+) => {
+  emitDataChanged(
+    {
+      resources: [
+        'fines',
+      ],
+      userId,
+    },
+    transaction
+  );
+
+  emitDataChanged(
+    {
+      resources: [
+        'fines',
+        'reports',
+      ],
+      staff: true,
+    },
+    transaction
+  );
+};
 
 const createFineForOverdueReturn =
   async (
@@ -52,27 +82,35 @@ const createFineForOverdueReturn =
         FINE_CAP
       ).toFixed(2);
 
-    return Fine.create(
-      {
-        userId:
-          record.userId,
+    const fine =
+      await Fine.create(
+        {
+          userId:
+            record.userId,
 
-        borrowRecordId:
-          record.id,
+          borrowRecordId:
+            record.id,
 
-        amount,
+          amount,
 
-        reason:
-          `Overdue return — ${daysLate} day(s) late`,
+          reason:
+            `Overdue return — ${daysLate} day(s) late`,
 
-        status:
-          'pending',
-      },
+          status:
+            'pending',
+        },
 
-      {
-        transaction,
-      }
+        {
+          transaction,
+        }
+      );
+
+    emitFineChange(
+      record.userId,
+      transaction
     );
+
+    return fine;
   };
 
 const getPendingBalance =
@@ -153,6 +191,11 @@ const recordManualPayment =
         await fine.save({
           transaction: t,
         });
+
+        emitFineChange(
+          fine.userId,
+          t
+        );
 
         return fine;
       }
@@ -353,6 +396,11 @@ const verifyAndMarkPaid =
           transaction: t,
         });
 
+        emitFineChange(
+          fine.userId,
+          t
+        );
+
         return fine;
       }
     );
@@ -403,6 +451,11 @@ const waiveFine =
         await fine.save({
           transaction: t,
         });
+
+        emitFineChange(
+          fine.userId,
+          t
+        );
 
         return fine;
       }
@@ -475,23 +528,6 @@ const listMyFines =
     };
   };
 
-/*
- * Staff fine list.
- *
- * Part 7 adds complete context:
- *
- * Fine
- *   ↓
- * Member
- *
- * Fine
- *   ↓
- * BorrowRecord
- *   ↓
- * BookCopy
- *   ↓
- * Book
- */
 const listAllFines =
   async (query) => {
     const {
