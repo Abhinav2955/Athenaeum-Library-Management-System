@@ -1,4 +1,6 @@
-const { Op } = require('sequelize');
+const {
+  Op,
+} = require('sequelize');
 
 const {
   Notification,
@@ -39,33 +41,49 @@ const createNotification =
         }
       );
 
-   
-    const io = getIO();
+    const emitNotification =
+      () => {
+        const io =
+          getIO();
 
-    if (io) {
-      io.to(
-        `user:${userId}`
-      ).emit(
-        'notification',
-        {
-          id:
-            notification.id,
-
-          type:
-            notification.type,
-
-          message:
-            notification.message,
-
-          createdAt:
-            notification.createdAt,
+        if (!io) {
+          return;
         }
+
+        io.to(
+          `user:${userId}`
+        ).emit(
+          'notification',
+          {
+            id:
+              notification.id,
+
+            type:
+              notification.type,
+
+            message:
+              notification.message,
+
+            createdAt:
+              notification.createdAt,
+          }
+        );
+      };
+
+    if (
+      transaction &&
+      typeof transaction.afterCommit ===
+        'function'
+    ) {
+      transaction.afterCommit(
+        emitNotification
       );
+    } else {
+      emitNotification();
     }
 
     return notification;
   };
-
 
 const hasExistingNotification =
   async ({

@@ -463,6 +463,25 @@ const checkout = async (
           }
         );
 
+      await notificationService
+        .createNotification(
+          {
+            userId:
+              borrowerId,
+
+            type:
+              'book_checked_out',
+
+            message:
+              `You checked out "${book.title}". It is due on ${record.dueAt.toLocaleDateString('en-IN')}.`,
+
+            borrowRecordId:
+              record.id,
+          },
+
+          t
+        );
+
       const resources = [
         'loans',
       ];
