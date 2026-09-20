@@ -9,19 +9,15 @@ const {
   sequelize,
 } = require('../../database/models');
 
-const ApiError =
-  require('../../utils/ApiError');
+const ApiError = require('../../utils/ApiError');
 
 const {
   parsePagination,
   buildPaginationMeta,
 } = require('../../utils/pagination');
 
-const razorpay =
-  require('../../config/razorpay');
-
-const env =
-  require('../../config/env');
+const razorpay = require('../../config/razorpay');
+const env = require('../../config/env');
 
 const {
   emitDataChanged,
@@ -29,10 +25,7 @@ const {
 
 const FINE_RATE_PER_DAY = 0.5;
 const FINE_CAP = 20.0;
-
-const MAX_UNPAID_BALANCE_FOR_CHECKOUT =
-  10.0;
-
+const MAX_UNPAID_BALANCE_FOR_CHECKOUT = 10.0;
 const msPerDay = 86400000;
 
 const emitFineChange = (
@@ -41,9 +34,7 @@ const emitFineChange = (
 ) => {
   emitDataChanged(
     {
-      resources: [
-        'fines',
-      ],
+      resources: ['fines'],
       userId,
     },
     transaction
@@ -99,7 +90,6 @@ const createFineForOverdueReturn =
           status:
             'pending',
         },
-
         {
           transaction,
         }
@@ -363,6 +353,14 @@ const verifyAndMarkPaid =
           );
         }
 
+        if (
+          !env.RAZORPAY_KEY_SECRET
+        ) {
+          throw ApiError.internal(
+            'Online payments are not configured on this server yet'
+          );
+        }
+
         const expectedSignature =
           crypto
             .createHmac(
@@ -374,9 +372,30 @@ const verifyAndMarkPaid =
             )
             .digest('hex');
 
+        const expectedBuffer =
+          Buffer.from(
+            expectedSignature,
+            'utf8'
+          );
+
+        const receivedBuffer =
+          Buffer.from(
+            String(
+              signature || ''
+            ),
+            'utf8'
+          );
+
+        const signatureMatches =
+          expectedBuffer.length ===
+            receivedBuffer.length &&
+          crypto.timingSafeEqual(
+            expectedBuffer,
+            receivedBuffer
+          );
+
         if (
-          expectedSignature !==
-          signature
+          !signatureMatches
         ) {
           throw ApiError.badRequest(
             'Payment verification failed — signature mismatch'
