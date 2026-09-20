@@ -5,6 +5,7 @@ const {
 const {
   User,
   RefreshToken,
+  sequelize,
 } = require('../../database/models');
 
 const ApiError =
@@ -25,27 +26,36 @@ const safeUser = (
 };
 
 const emitUserChange = (
-  userId
+  userId,
+  transaction = null
 ) => {
-  emitDataChanged(
-    {
+  const emit = () => {
+    emitDataChanged({
       resources: [
         'profile',
         'users',
       ],
       userId,
-    }
-  );
+    });
 
-  emitDataChanged(
-    {
+    emitDataChanged({
       resources: [
         'users',
         'reports',
       ],
       staff: true,
-    }
-  );
+    });
+  };
+
+  if (transaction) {
+    transaction.afterCommit(
+      emit
+    );
+
+    return;
+  }
+
+  emit();
 };
 
 const listUsers =
@@ -180,59 +190,75 @@ const updateMembershipStatus =
       );
     }
 
-    const user =
-      await User.findByPk(
-        targetUserId
-      );
+    return sequelize.transaction(
+      async (transaction) => {
+        const user =
+          await User.findByPk(
+            targetUserId,
+            {
+              transaction,
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            }
+          );
 
-    if (!user) {
-      throw ApiError.notFound(
-        'User not found'
-      );
-    }
-
-    if (
-      user.membershipStatus ===
-      membershipStatus
-    ) {
-      return safeUser(
-        user
-      );
-    }
-
-    user.membershipStatus =
-      membershipStatus;
-
-    await user.save();
-
-    if (
-      membershipStatus !==
-      'active'
-    ) {
-      await RefreshToken.update(
-        {
-          revokedAt:
-            new Date(),
-        },
-        {
-          where: {
-            userId:
-              user.id,
-            revokedAt: {
-              [Op.is]:
-                null,
-            },
-          },
+        if (!user) {
+          throw ApiError.notFound(
+            'User not found'
+          );
         }
-      );
-    }
 
-    emitUserChange(
-      user.id
-    );
+        if (
+          user.membershipStatus ===
+          membershipStatus
+        ) {
+          return safeUser(
+            user
+          );
+        }
 
-    return safeUser(
-      user
+        user.membershipStatus =
+          membershipStatus;
+
+        await user.save({
+          transaction,
+        });
+
+        if (
+          membershipStatus !==
+          'active'
+        ) {
+          await RefreshToken.update(
+            {
+              revokedAt:
+                new Date(),
+            },
+            {
+              where: {
+                userId:
+                  user.id,
+
+                revokedAt: {
+                  [Op.is]:
+                    null,
+                },
+              },
+
+              transaction,
+            }
+          );
+        }
+
+        emitUserChange(
+          user.id,
+          transaction
+        );
+
+        return safeUser(
+          user
+        );
+      }
     );
   };
 
@@ -251,77 +277,104 @@ const updateRole =
       );
     }
 
-    const user =
-      await User.findByPk(
-        targetUserId
-      );
+    return sequelize.transaction(
+      async (transaction) => {
+        const user =
+          await User.findByPk(
+            targetUserId,
+            {
+              transaction,
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            }
+          );
 
-    if (!user) {
-      throw ApiError.notFound(
-        'User not found'
-      );
-    }
+        if (!user) {
+          throw ApiError.notFound(
+            'User not found'
+          );
+        }
 
-    if (
-      user.role ===
-      role
-    ) {
-      return safeUser(
-        user
-      );
-    }
+        if (
+          user.role ===
+          role
+        ) {
+          return safeUser(
+            user
+          );
+        }
 
-    if (
-      user.role ===
-        'admin' &&
-      role !==
-        'admin'
-    ) {
-      const adminCount =
-        await User.count({
-          where: {
-            role:
-              'admin',
-          },
+        if (
+          user.role ===
+            'admin' &&
+          role !==
+            'admin'
+        ) {
+          const admins =
+            await User.findAll({
+              where: {
+                role:
+                  'admin',
+              },
+
+              attributes: [
+                'id',
+              ],
+
+              transaction,
+
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
+
+          if (
+            admins.length <=
+            1
+          ) {
+            throw ApiError.badRequest(
+              'The final admin account cannot be demoted'
+            );
+          }
+        }
+
+        user.role =
+          role;
+
+        await user.save({
+          transaction,
         });
 
-      if (
-        adminCount <= 1
-      ) {
-        throw ApiError.badRequest(
-          'The final admin account cannot be demoted'
+        await RefreshToken.update(
+          {
+            revokedAt:
+              new Date(),
+          },
+          {
+            where: {
+              userId:
+                user.id,
+
+              revokedAt: {
+                [Op.is]:
+                  null,
+              },
+            },
+
+            transaction,
+          }
+        );
+
+        emitUserChange(
+          user.id,
+          transaction
+        );
+
+        return safeUser(
+          user
         );
       }
-    }
-
-    user.role =
-      role;
-
-    await user.save();
-
-    await RefreshToken.update(
-      {
-        revokedAt:
-          new Date(),
-      },
-      {
-        where: {
-          userId:
-            user.id,
-          revokedAt: {
-            [Op.is]:
-              null,
-          },
-        },
-      }
-    );
-
-    emitUserChange(
-      user.id
-    );
-
-    return safeUser(
-      user
     );
   };
 
