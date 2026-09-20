@@ -627,133 +627,157 @@ const refresh =
         rawToken
       );
 
-    return sequelize.transaction(
-      async (t) => {
-        const stored =
-          await RefreshToken.findOne({
-            where: {
-              userId:
-                payload.sub,
-
-              tokenHash,
-            },
-
-            transaction:
-              t,
-
-            lock:
-              t.LOCK.UPDATE,
-          });
-
-        if (!stored) {
-          throw ApiError.unauthorized(
-            'Refresh token not recognized'
-          );
-        }
-
-        if (
-          stored.revokedAt
-        ) {
-          await RefreshToken.update(
-            {
-              revokedAt:
-                new Date(),
-            },
-            {
+    const result =
+      await sequelize.transaction(
+        async (t) => {
+          const stored =
+            await RefreshToken.findOne({
               where: {
                 userId:
                   payload.sub,
 
-                revokedAt: {
-                  [Op.is]:
-                    null,
-                },
+                tokenHash,
               },
 
               transaction:
                 t,
-            }
-          );
 
-          throw ApiError.unauthorized(
-            'Refresh token reuse detected — all sessions revoked'
-          );
-        }
+              lock:
+                t.LOCK.UPDATE,
+            });
 
-        if (
-          stored.expiresAt <
-          new Date()
-        ) {
-          throw ApiError.unauthorized(
-            'Refresh token expired'
-          );
-        }
+          if (!stored) {
+            throw ApiError.unauthorized(
+              'Refresh token not recognized'
+            );
+          }
 
-        const user =
-          await User.findByPk(
-            payload.sub,
-            {
-              transaction:
-                t,
-            }
-          );
+          if (
+            stored.revokedAt
+          ) {
+            await RefreshToken.update(
+              {
+                revokedAt:
+                  new Date(),
+              },
+              {
+                where: {
+                  userId:
+                    payload.sub,
 
-        if (!user) {
-          throw ApiError.unauthorized(
-            'User no longer exists'
-          );
-        }
+                  revokedAt: {
+                    [Op.is]:
+                      null,
+                  },
+                },
 
-        if (
-          !user.isEmailVerified &&
-          env.NODE_ENV !==
-            'test'
-        ) {
-          throw ApiError.forbidden(
-            'Please verify your email before continuing'
-          );
-        }
+                transaction:
+                  t,
+              }
+            );
 
-        if (
-          user.membershipStatus ===
-          'suspended'
-        ) {
-          throw ApiError.forbidden(
-            'Your account has been suspended'
-          );
-        }
+            return {
+              reuseDetected:
+                true,
+            };
+          }
 
-        const tokens =
-          await issueTokenPair(
+          if (
+            stored.expiresAt <
+            new Date()
+          ) {
+            throw ApiError.unauthorized(
+              'Refresh token expired'
+            );
+          }
+
+          const user =
+            await User.findByPk(
+              payload.sub,
+              {
+                transaction:
+                  t,
+              }
+            );
+
+          if (!user) {
+            throw ApiError.unauthorized(
+              'User no longer exists'
+            );
+          }
+
+          if (
+            !user.isEmailVerified &&
+            env.NODE_ENV !==
+              'test'
+          ) {
+            throw ApiError.forbidden(
+              'Please verify your email before continuing'
+            );
+          }
+
+          if (
+            user.membershipStatus ===
+            'suspended'
+          ) {
+            throw ApiError.forbidden(
+              'Your account has been suspended'
+            );
+          }
+
+          const tokens =
+            await issueTokenPair(
+              user,
+              meta,
+              t
+            );
+
+          stored.revokedAt =
+            new Date();
+
+          stored.replacedByTokenId =
+            tokens
+              .storedRefreshToken
+              .id;
+
+          await stored.save({
+            transaction:
+              t,
+          });
+
+          return {
+            reuseDetected:
+              false,
+
             user,
-            meta,
-            t
-          );
 
-        stored.revokedAt =
-          new Date();
+            accessToken:
+              tokens.accessToken,
 
-        stored.replacedByTokenId =
-          tokens
-            .storedRefreshToken
-            .id;
+            refreshToken:
+              tokens.refreshToken,
+          };
+        }
+      );
 
-        await stored.save({
-          transaction:
-            t,
-        });
+    if (
+      result.reuseDetected
+    ) {
+      throw ApiError.unauthorized(
+        'Refresh token reuse detected — all sessions revoked'
+      );
+    }
 
-        return {
-          user,
+    return {
+      user:
+        result.user,
 
-          accessToken:
-            tokens.accessToken,
+      accessToken:
+        result.accessToken,
 
-          refreshToken:
-            tokens.refreshToken,
-        };
-      }
-    );
+      refreshToken:
+        result.refreshToken,
+    };
   };
 
 const logout =
