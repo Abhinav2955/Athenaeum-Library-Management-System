@@ -40,7 +40,6 @@ const authLimiter =
     legacyHeaders:
       false,
 
-    
     skipSuccessfulRequests:
       true,
 
@@ -53,6 +52,30 @@ const authLimiter =
     },
   });
 
+const refreshLimiter =
+  rateLimit({
+    windowMs:
+      15 * 60 * 1000,
+
+    max: 60,
+
+    standardHeaders:
+      true,
+
+    legacyHeaders:
+      false,
+
+    skipSuccessfulRequests:
+      false,
+
+    message: {
+      success:
+        false,
+
+      message:
+        'Too many refresh requests, please try again later',
+    },
+  });
 
 const verificationResendLimiter =
   rateLimit({
@@ -82,5 +105,6 @@ const verificationResendLimiter =
 module.exports = {
   apiLimiter,
   authLimiter,
+  refreshLimiter,
   verificationResendLimiter,
 };

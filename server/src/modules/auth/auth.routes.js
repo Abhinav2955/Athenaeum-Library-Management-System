@@ -12,8 +12,10 @@ const authenticate =
 
 const {
   authLimiter,
+  refreshLimiter,
   verificationResendLimiter,
-} = require('../../middlewares/rateLimiter.middleware');
+} =
+  require('../../middlewares/rateLimiter.middleware');
 
 const {
   registerSchema,
@@ -23,7 +25,8 @@ const {
   resendVerificationSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
-} = require('./auth.validation');
+} =
+  require('./auth.validation');
 
 const router =
   express.Router();
@@ -48,7 +51,7 @@ router.post(
 
 router.post(
   '/refresh',
-  authLimiter,
+  refreshLimiter,
   controller.refresh
 );
 
@@ -80,7 +83,6 @@ router.post(
   ),
   controller.verifyEmail
 );
-
 
 router.post(
   '/resend-verification',
