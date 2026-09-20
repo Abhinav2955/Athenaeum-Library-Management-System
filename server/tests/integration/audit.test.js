@@ -15,6 +15,11 @@ const {
 } =
   require('../../src/database/models');
 
+const {
+  sanitizeValue,
+} =
+  require('../../src/modules/audit/audit.service');
+
 const stamp =
   Date.now();
 
@@ -78,7 +83,6 @@ const registerAndLogin =
     return login.body
       .data.accessToken;
   };
-
 
 const waitForAudit =
   async (
@@ -170,6 +174,72 @@ beforeAll(
 describe(
   'Part 11 - Audit trail',
   () => {
+    it(
+      'removes sensitive values from audit metadata recursively',
+      () => {
+        const sanitized =
+          sanitizeValue({
+            title:
+              'Safe value',
+
+            password:
+              'Password123',
+
+            accessToken:
+              'access-secret',
+
+            nested: {
+              refreshToken:
+                'refresh-secret',
+
+              authorization:
+                'Bearer secret',
+
+              cookie:
+                'session=secret',
+
+              signature:
+                'payment-signature',
+
+              apiSecret:
+                'api-secret',
+
+              safe:
+                'keep-me',
+            },
+
+            items: [
+              {
+                token:
+                  'array-secret',
+
+                value:
+                  'visible',
+              },
+            ],
+          });
+
+        expect(
+          sanitized
+        ).toEqual({
+          title:
+            'Safe value',
+
+          nested: {
+            safe:
+              'keep-me',
+          },
+
+          items: [
+            {
+              value:
+                'visible',
+            },
+          ],
+        });
+      }
+    );
+
     it(
       'does not allow a normal member to view audit logs',
       async () => {
@@ -332,7 +402,6 @@ describe(
           res.statusCode
         ).toBe(409);
 
-       
         await new Promise(
           (resolve) =>
             setTimeout(
