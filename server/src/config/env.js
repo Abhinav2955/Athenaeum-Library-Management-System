@@ -111,26 +111,6 @@ const envSchema = z.object({
       'Athenaeum Library'
     ),
 
-  SMTP_HOST: z
-    .string()
-    .optional(),
-
-  SMTP_PORT: z.coerce
-    .number()
-    .optional(),
-
-  SMTP_USER: z
-    .string()
-    .optional(),
-
-  SMTP_PASS: z
-    .string()
-    .optional(),
-
-  SMTP_FROM: z
-    .string()
-    .optional(),
-
   REDIS_HOST: z
     .string()
     .default('localhost'),

@@ -141,7 +141,7 @@ const sendWithBrevo =
     }
 
     logger.info(
-      `Email sent successfully to ${to}`
+      'Email sent successfully'
     );
 
     return result;
