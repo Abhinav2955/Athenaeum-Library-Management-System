@@ -67,7 +67,6 @@ describe(
           res.body.success
         ).toBe(true);
 
-       
         expect(
           res.body.data
             .user.email
@@ -80,7 +79,6 @@ describe(
             .requiresVerification
         ).toBe(true);
 
-        
         expect(
           res.body.data
             .accessToken
@@ -182,7 +180,6 @@ describe(
       }
     );
 
-    
     it(
       'allows test-environment login without changing the verification token',
       async () => {
@@ -255,7 +252,6 @@ describe(
             },
           });
 
-       
         expect(
           after
             .emailVerificationTokenHash
@@ -277,7 +273,6 @@ describe(
     it(
       'blocks an immediate verification-email resend',
       async () => {
-        
         const res =
           await request(app)
             .post(
@@ -311,7 +306,6 @@ describe(
             },
           });
 
-      
         user.emailVerificationExpires =
           new Date(
             Date.now() -
@@ -362,7 +356,6 @@ describe(
             .emailVerificationTokenHash
         ).toBeTruthy();
 
-        
         expect(
           updated
             .emailVerificationTokenHash
@@ -410,7 +403,6 @@ describe(
                 `unknown.${Date.now()}@example.com`,
             });
 
-        
         expect(
           res.statusCode
         ).toBe(200);
@@ -426,7 +418,6 @@ describe(
     it(
       'verifies the email and creates an authenticated session',
       async () => {
-      
         const rawToken =
           crypto
             .randomBytes(32)
@@ -474,7 +465,6 @@ describe(
           res.statusCode
         ).toBe(200);
 
-        
         expect(
           res.body.data
             .accessToken
@@ -518,7 +508,6 @@ describe(
           updated.isEmailVerified
         ).toBe(true);
 
-        
         expect(
           updated
             .emailVerificationTokenHash
@@ -545,7 +534,6 @@ describe(
               'hex'
             );
 
-      
         const res =
           await request(app)
             .post(
@@ -599,7 +587,6 @@ describe(
                 testUser.email,
             });
 
-        
         expect(
           res.statusCode
         ).toBe(200);
@@ -636,6 +623,46 @@ describe(
         expect(
           res.statusCode
         ).toBe(401);
+      }
+    );
+
+    it(
+      'rejects a tampered access token',
+      async () => {
+        const parts =
+          accessToken.split('.');
+
+        expect(
+          parts.length
+        ).toBe(3);
+
+        const tamperedToken =
+          `${parts[0]}.${parts[1]}.${parts[2].slice(
+            0,
+            -1
+          )}${
+            parts[2].endsWith('a')
+              ? 'b'
+              : 'a'
+          }`;
+
+        const res =
+          await request(app)
+            .get(
+              '/api/v1/auth/me'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${tamperedToken}`
+            );
+
+        expect(
+          res.statusCode
+        ).toBe(401);
+
+        expect(
+          res.body.success
+        ).toBe(false);
       }
     );
 
