@@ -1,7 +1,5 @@
 import Button from './Button';
 
-// meta shape comes straight from the backend's buildPaginationMeta():
-// { page, limit, total, totalPages, hasNextPage, hasPrevPage }
 export default function Pagination({ meta, onPageChange }) {
   if (!meta || meta.totalPages <= 1) return null;
 

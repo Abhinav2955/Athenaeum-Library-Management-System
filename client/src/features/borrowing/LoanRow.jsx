@@ -4,10 +4,6 @@ import Button from '../../components/common/Button';
 const formatDate = (iso) =>
   new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
-// The backend's stored `status` only flips to 'returned' on an explicit
-// return call — it doesn't auto-flip to 'overdue' without a scheduled job
-// running. So overdue is computed here from the due date directly, the same
-// way the backend's own reports module does it.
 const getDisplayStatus = (record) => {
   if (record.status === 'returned') return 'returned';
   if (new Date(record.dueAt) < new Date()) return 'overdue';

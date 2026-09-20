@@ -31,12 +31,7 @@ export const staffCheckoutBook =
     return res.data.data;
   };
 
-/*
- * condition:
- *
- * good
- * damaged
- */
+
 export const returnLoan =
   async (
     recordId,
@@ -59,9 +54,7 @@ export const returnLoan =
     };
   };
 
-/*
- * Staff reports a checked-out book as lost.
- */
+
 export const markLoanLost =
   async (
     recordId
@@ -167,13 +160,7 @@ export const listCopiesForBook =
     return res.data.data;
   };
 
-/*
- * Repair lifecycle:
- *
- * available
- * damaged
- * under_repair
- */
+
 export const updateCopyStatus =
   async (
     copyId,

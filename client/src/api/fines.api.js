@@ -40,9 +40,7 @@ export const verifyPayment =
     return res.data.data;
   };
 
-/*
- * Staff list.
- */
+
 export const listAllFines =
   async (
     params = {}
@@ -73,9 +71,7 @@ export const listAllFines =
     return res.data.data;
   };
 
-/*
- * Cash / counter payment.
- */
+
 export const recordManualPayment =
   async (
     fineId
@@ -88,9 +84,7 @@ export const recordManualPayment =
     return res.data.data;
   };
 
-/*
- * Staff waiver.
- */
+
 export const waiveFine =
   async (
     fineId,

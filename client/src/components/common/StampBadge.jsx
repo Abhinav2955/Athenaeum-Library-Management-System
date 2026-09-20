@@ -1,7 +1,3 @@
-// The one memorable visual element of this app: status is shown as an
-// ink-stamped due-date card (a real library artifact) rather than a generic
-// colored pill. Monospace type + a bordered rectangle evokes a checkout-card
-// stamp without any animation or skeuomorphic excess.
 const toneClasses = {
   neutral: 'border-hairline text-ink-muted bg-white',
   success: 'border-status-success text-status-success bg-status-successBg',

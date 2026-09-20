@@ -53,17 +53,7 @@ export const getMe =
     return response.data.data;
   };
 
-/*
- * Verification now returns:
- *
- * {
- *   user,
- *   accessToken
- * }
- *
- * and the backend also sets the refresh-token
- * httpOnly cookie.
- */
+
 export const verifyEmail =
   async (token) => {
     const response =

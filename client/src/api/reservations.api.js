@@ -37,9 +37,7 @@ export const listMyReservations =
     return res.data.data;
   };
 
-/*
- * Staff-only reservation list.
- */
+
 export const listAllReservations =
   async (params = {}) => {
     const cleaned =
