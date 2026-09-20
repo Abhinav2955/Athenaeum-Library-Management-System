@@ -20,7 +20,13 @@ if (
 ) {
   dialectOptions.ssl = {
     rejectUnauthorized:
-      false,
+      true,
+
+    ca:
+      env.DB_CA_CERT.replace(
+        /\\n/g,
+        '\n'
+      ),
   };
 }
 

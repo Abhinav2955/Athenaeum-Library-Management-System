@@ -59,6 +59,10 @@ const envSchema = z
       ])
       .default('false'),
 
+    DB_CA_CERT: z
+      .string()
+      .optional(),
+
     JWT_ACCESS_SECRET: z
       .string()
       .min(32),
@@ -160,6 +164,24 @@ const envSchema = z
 
           message:
             'JWT access and refresh secrets must be different',
+        });
+      }
+
+      if (
+        data.DB_SSL ===
+          'true' &&
+        !data.DB_CA_CERT
+      ) {
+        ctx.addIssue({
+          code:
+            z.ZodIssueCode.custom,
+
+          path: [
+            'DB_CA_CERT',
+          ],
+
+          message:
+            'DB_CA_CERT is required when DB_SSL is enabled',
         });
       }
     }
