@@ -13,6 +13,7 @@ const {
 
 const {
   User,
+  RefreshToken,
 } = require('../../src/database/models');
 
 const {
@@ -35,6 +36,35 @@ const testUser = {
 };
 
 let accessToken;
+
+const getRefreshCookie =
+  (
+    response
+  ) => {
+    const cookies =
+      response.headers[
+        'set-cookie'
+      ];
+
+    expect(
+      cookies
+    ).toBeDefined();
+
+    const refreshCookie =
+      cookies.find(
+        (cookie) =>
+          cookie.startsWith(
+            'lms_refresh_token='
+          )
+      );
+
+    expect(
+      refreshCookie
+    ).toBeDefined();
+
+    return refreshCookie
+      .split(';')[0];
+  };
 
 beforeAll(
   async () => {
@@ -226,18 +256,8 @@ describe(
           testUser.email
         );
 
-        expect(
-          res.headers[
-            'set-cookie'
-          ]
-        ).toBeDefined();
-
-        expect(
-          res.headers[
-            'set-cookie'
-          ][0]
-        ).toMatch(
-          /lms_refresh_token/
+        getRefreshCookie(
+          res
         );
 
         accessToken =
@@ -482,18 +502,8 @@ describe(
             .user.isEmailVerified
         ).toBe(true);
 
-        expect(
-          res.headers[
-            'set-cookie'
-          ]
-        ).toBeDefined();
-
-        expect(
-          res.headers[
-            'set-cookie'
-          ][0]
-        ).toMatch(
-          /lms_refresh_token/
+        getRefreshCookie(
+          res
         );
 
         const updated =
@@ -608,6 +618,210 @@ describe(
           userAfter
             .emailVerificationExpires
         ).toBeNull();
+      }
+    );
+
+    it(
+      'rotates the refresh token and revokes the previous token',
+      async () => {
+        const loginRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/login'
+            )
+            .send(
+              testUser
+            );
+
+        expect(
+          loginRes.statusCode
+        ).toBe(200);
+
+        const oldCookie =
+          getRefreshCookie(
+            loginRes
+          );
+
+        const oldToken =
+          oldCookie
+            .split('=')[1];
+
+        const oldHash =
+          hashToken(
+            oldToken
+          );
+
+        const refreshRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              oldCookie
+            );
+
+        expect(
+          refreshRes.statusCode
+        ).toBe(200);
+
+        expect(
+          refreshRes.body.data
+            .accessToken
+        ).toBeDefined();
+
+        const newCookie =
+          getRefreshCookie(
+            refreshRes
+          );
+
+        expect(
+          newCookie
+        ).not.toBe(
+          oldCookie
+        );
+
+        const oldStored =
+          await RefreshToken.findOne({
+            where: {
+              tokenHash:
+                oldHash,
+            },
+          });
+
+        expect(
+          oldStored
+        ).not.toBeNull();
+
+        expect(
+          oldStored.revokedAt
+        ).not.toBeNull();
+
+        expect(
+          oldStored
+            .replacedByTokenId
+        ).not.toBeNull();
+
+        const newToken =
+          newCookie
+            .split('=')[1];
+
+        const newStored =
+          await RefreshToken.findOne({
+            where: {
+              tokenHash:
+                hashToken(
+                  newToken
+                ),
+            },
+          });
+
+        expect(
+          newStored
+        ).not.toBeNull();
+
+        expect(
+          newStored.revokedAt
+        ).toBeNull();
+      }
+    );
+
+    it(
+      'revokes all active sessions when a rotated refresh token is reused',
+      async () => {
+        const loginRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/login'
+            )
+            .send(
+              testUser
+            );
+
+        expect(
+          loginRes.statusCode
+        ).toBe(200);
+
+        const originalCookie =
+          getRefreshCookie(
+            loginRes
+          );
+
+        const firstRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          firstRefresh.statusCode
+        ).toBe(200);
+
+        const rotatedCookie =
+          getRefreshCookie(
+            firstRefresh
+          );
+
+        const reuseRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          reuseRes.statusCode
+        ).toBe(401);
+
+        expect(
+          reuseRes.body.message
+        ).toMatch(
+          /reuse detected/i
+        );
+
+        const user =
+          await User.findOne({
+            where: {
+              email:
+                testUser.email,
+            },
+          });
+
+        const activeTokens =
+          await RefreshToken.count({
+            where: {
+              userId:
+                user.id,
+
+              revokedAt:
+                null,
+            },
+          });
+
+        expect(
+          activeTokens
+        ).toBe(0);
+
+        const rotatedRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              rotatedCookie
+            );
+
+        expect(
+          rotatedRes.statusCode
+        ).toBe(401);
       }
     );
 
