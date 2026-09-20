@@ -96,14 +96,19 @@ const envSchema = z.object({
     .string()
     .optional(),
 
-  RESEND_API_KEY: z
+  BREVO_API_KEY: z
     .string()
     .optional(),
 
-  RESEND_FROM: z
+  BREVO_FROM_EMAIL: z
+    .string()
+    .email()
+    .optional(),
+
+  BREVO_FROM_NAME: z
     .string()
     .default(
-      'Athenaeum Library <onboarding@resend.dev>'
+      'Athenaeum Library'
     ),
 
   SMTP_HOST: z

@@ -60,41 +60,61 @@ const getDevelopmentTransporter =
     return transporterPromise;
   };
 
-const sendWithResend =
+const sendWithBrevo =
   async ({
     to,
     subject,
     html,
   }) => {
-    if (!env.RESEND_API_KEY) {
+    if (!env.BREVO_API_KEY) {
       throw new Error(
-        'RESEND_API_KEY is required in production'
+        'BREVO_API_KEY is required in production'
+      );
+    }
+
+    if (!env.BREVO_FROM_EMAIL) {
+      throw new Error(
+        'BREVO_FROM_EMAIL is required in production'
       );
     }
 
     const response =
       await fetch(
-        'https://api.resend.com/emails',
+        'https://api.brevo.com/v3/smtp/email',
         {
           method: 'POST',
 
           headers: {
-            Authorization:
-              `Bearer ${env.RESEND_API_KEY}`,
+            accept:
+              'application/json',
+
+            'api-key':
+              env.BREVO_API_KEY,
 
             'Content-Type':
               'application/json',
           },
 
           body: JSON.stringify({
-            from:
-              env.RESEND_FROM,
+            sender: {
+              name:
+                env.BREVO_FROM_NAME,
 
-            to: [to],
+              email:
+                env.BREVO_FROM_EMAIL,
+            },
+
+            to: [
+              {
+                email:
+                  to,
+              },
+            ],
 
             subject,
 
-            html,
+            htmlContent:
+              html,
           }),
 
           signal:
@@ -104,13 +124,19 @@ const sendWithResend =
         }
       );
 
-    const result =
-      await response.json();
+    let result;
+
+    try {
+      result =
+        await response.json();
+    } catch {
+      result = {};
+    }
 
     if (!response.ok) {
       throw new Error(
         result?.message ||
-        `Resend request failed with status ${response.status}`
+        `Brevo request failed with status ${response.status}`
       );
     }
 
@@ -166,7 +192,7 @@ const sendEmail =
       env.NODE_ENV ===
       'production'
     ) {
-      return sendWithResend({
+      return sendWithBrevo({
         to,
         subject,
         html,
