@@ -6,66 +6,80 @@ const {
   sequelize,
 } = require('../../src/config/db');
 
+const {
+  User,
+  BorrowRecord,
+  Notification,
+  Fine,
+} = require(
+  '../../src/database/models'
+);
+
 let adminToken;
 let memberToken;
+let memberId;
 
 let bookId;
 let recordId;
 
 const admin = {
   name: 'AdminF',
-  email: `adminf.${Date.now()}@example.com`,
+  email:
+    `adminf.${Date.now()}@example.com`,
   password: 'StrongPass1',
 };
 
 const member = {
   name: 'MemberF',
-  email: `memf.${Date.now()}@example.com`,
+  email:
+    `memf.${Date.now()}@example.com`,
   password: 'StrongPass1',
 };
 
-const registerAndLogin = async (creds) => {
-  await request(app)
-    .post('/api/v1/auth/register')
-    .send(creds);
+const registerAndLogin =
+  async (creds) => {
+    await request(app)
+      .post('/api/v1/auth/register')
+      .send(creds);
 
-  const res = await request(app)
-    .post('/api/v1/auth/login')
-    .send(creds);
+    const res =
+      await request(app)
+        .post('/api/v1/auth/login')
+        .send(creds);
 
-  return res.body.data.accessToken;
-};
+    return res.body.data
+      .accessToken;
+  };
 
 beforeAll(async () => {
   await sequelize.sync({
     force: true,
   });
 
-  /*
-   * Create normal member.
-   */
   memberToken =
     await registerAndLogin(
       member
     );
 
-  /*
-   * Create admin account first.
-   */
+  const memberUser =
+    await User.findOne({
+      where: {
+        email:
+          member.email,
+      },
+    });
+
+  expect(
+    memberUser
+  ).not.toBeNull();
+
+  memberId =
+    memberUser.id;
+
   await registerAndLogin(
     admin
   );
 
-  const {
-    User,
-    BorrowRecord,
-  } = require(
-    '../../src/database/models'
-  );
-
-  /*
-   * Promote account to admin.
-   */
   await User.update(
     {
       role: 'admin',
@@ -78,20 +92,11 @@ beforeAll(async () => {
     }
   );
 
-  /*
-   * Log in again so JWT contains admin role.
-   */
   adminToken =
     await registerAndLogin(
       admin
     );
 
-  /*
-   * Create catalog record.
-   *
-   * Part 1 architecture:
-   * book creation itself creates zero physical copies.
-   */
   const bookRes =
     await request(app)
       .post('/api/v1/books')
@@ -114,9 +119,6 @@ beforeAll(async () => {
   bookId =
     bookRes.body.data.id;
 
-  /*
-   * Create one actual physical copy.
-   */
   const copiesRes =
     await request(app)
       .post(
@@ -135,9 +137,6 @@ beforeAll(async () => {
     copiesRes.statusCode
   ).toBe(201);
 
-  /*
-   * Member checks out the book.
-   */
   const checkoutRes =
     await request(app)
       .post(
@@ -158,10 +157,6 @@ beforeAll(async () => {
   recordId =
     checkoutRes.body.data.id;
 
-  /*
-   * Force loan into overdue territory without
-   * waiting for the scheduler.
-   */
   const record =
     await BorrowRecord.findByPk(
       recordId
@@ -175,15 +170,6 @@ beforeAll(async () => {
 
   await record.save();
 });
-
-/*
- * Deliberately no afterAll sequelize/redis close.
- *
- * The complete integration suite shares these
- * resources while running under --runInBand.
- *
- * package.json already uses --forceExit.
- */
 
 describe(
   'Fines module',
@@ -253,6 +239,48 @@ describe(
         ).toBeLessThanOrEqual(
           6.0
         );
+
+        const notification =
+          await Notification.findOne({
+            where: {
+              userId:
+                memberId,
+
+              type:
+                'fine_issued',
+
+              borrowRecordId:
+                recordId,
+            },
+          });
+
+        expect(
+          notification
+        ).not.toBeNull();
+
+        expect(
+          notification.userId
+        ).toBe(
+          memberId
+        );
+
+        expect(
+          notification.type
+        ).toBe(
+          'fine_issued'
+        );
+
+        expect(
+          notification.borrowRecordId
+        ).toBe(
+          recordId
+        );
+
+        expect(
+          notification.message
+        ).toMatch(
+          /fine/i
+        );
       }
     );
 
@@ -317,30 +345,9 @@ describe(
       }
     );
 
-    /*
-     * IMPORTANT:
-     *
-     * This test must NOT call the real Razorpay API
-     * when credentials exist.
-     *
-     * External payment providers make integration
-     * tests slow and nondeterministic.
-     *
-     * Therefore:
-     *
-     * - if Razorpay credentials exist, skip the
-     *   "not configured" assertion
-     *
-     * - if credentials are missing, verify that the
-     *   server rejects order creation cleanly
-     */
     it(
       "rejects starting an online payment when Razorpay isn't configured",
       async () => {
-        /*
-         * This particular test is only relevant when
-         * Razorpay is actually unconfigured.
-         */
         if (
           process.env
             .RAZORPAY_KEY_ID &&
@@ -350,15 +357,6 @@ describe(
           return;
         }
 
-        const {
-          BorrowRecord,
-        } = require(
-          '../../src/database/models'
-        );
-
-        /*
-         * Create another overdue-return fine.
-         */
         const checkoutRes =
           await request(app)
             .post(
@@ -457,12 +455,6 @@ describe(
     it(
       'lets staff waive a pending fine',
       async () => {
-        const {
-          BorrowRecord,
-        } = require(
-          '../../src/database/models'
-        );
-
         const checkoutRes =
           await request(app)
             .post(
@@ -568,13 +560,6 @@ describe(
     it(
       'blocks new checkouts once pending balance exceeds the limit',
       async () => {
-        const {
-          Fine,
-          User,
-        } = require(
-          '../../src/database/models'
-        );
-
         const targetUser =
           await User.findOne({
             where: {
