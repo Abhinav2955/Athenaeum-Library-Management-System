@@ -112,7 +112,6 @@ beforeAll(async () => {
       admin
     );
 
-  
   const bookRes =
     await request(app)
       .post(
@@ -137,7 +136,6 @@ beforeAll(async () => {
   bookId =
     bookRes.body.data.id;
 
-  
   const copiesRes =
     await request(app)
       .post(
@@ -158,7 +156,6 @@ beforeAll(async () => {
     copiesRes.statusCode
   ).toBe(201);
 
-  
   const checkout =
     await request(app)
       .post(
@@ -179,7 +176,6 @@ beforeAll(async () => {
   recordId =
     checkout.body.data.id;
 
-  
   await BorrowRecord.update(
     {
       status:
@@ -204,7 +200,6 @@ beforeAll(async () => {
     }
   );
 
-  
   const targetUser =
     await User.findOne({
       where: {
@@ -288,7 +283,6 @@ describe(
           1
         );
 
-       
         expect(
           data.overdueLoans
         ).toBeGreaterThanOrEqual(
@@ -382,7 +376,6 @@ describe(
     it(
       'does not count lost physical copies as active inventory',
       async () => {
-       
         const existing =
           await BookCopy.findOne({
             where: {
@@ -396,7 +389,6 @@ describe(
           existing
         ).not.toBeNull();
 
-        
         const before =
           await request(app)
             .get(
@@ -592,6 +584,50 @@ describe(
           res.text
         ).toMatch(
           /Domain-Driven Design/
+        );
+      }
+    );
+
+    it(
+      'neutralizes spreadsheet formulas in CSV exports',
+      async () => {
+        await User.update(
+          {
+            name:
+              '=2+2',
+          },
+          {
+            where: {
+              email:
+                member.email,
+            },
+          }
+        );
+
+        const res =
+          await request(app)
+            .get(
+              '/api/v1/reports/overdue/export'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            );
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        expect(
+          res.text
+        ).toContain(
+          "\"'=2+2\""
+        );
+
+        expect(
+          res.text
+        ).not.toContain(
+          '"=2+2"'
         );
       }
     );

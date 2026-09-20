@@ -17,7 +17,6 @@ const {
 const DAY_MS =
   24 * 60 * 60 * 1000;
 
-
 const getInventoryHealth =
   async () => {
     const statuses = [
@@ -100,7 +99,6 @@ const getInventoryHealth =
     };
   };
 
-
 const getDashboardSummary =
   async () => {
     const now =
@@ -109,17 +107,13 @@ const getDashboardSummary =
     const [
       totalBooks,
       totalMembers,
-
       openLoans,
       overdueLoans,
-
       waitingReservations,
       readyReservations,
-
       pendingFinesTotal,
       collectedFinesTotal,
       waivedFinesTotal,
-
       inventory,
     ] =
       await Promise.all([
@@ -132,7 +126,6 @@ const getDashboardSummary =
           },
         }),
 
-        
         BorrowRecord.count({
           where: {
             status: {
@@ -144,7 +137,6 @@ const getDashboardSummary =
           },
         }),
 
-        
         BorrowRecord.count({
           where: {
             status: {
@@ -249,7 +241,6 @@ const getDashboardSummary =
           waivedFinesTotal
         ) || 0,
 
-      
       totalCopies:
         inventory.activeInventory,
 
@@ -386,7 +377,6 @@ const getMostBorrowedBooks =
       );
   };
 
-
 const getOverdueLoans =
   async () => {
     return BorrowRecord.findAll({
@@ -461,7 +451,6 @@ const getOverdueLoans =
       ],
     });
   };
-
 
 const getCirculationStats =
   async (
@@ -700,6 +689,23 @@ const getFineRevenueReport =
     };
   };
 
+const sanitizeCsvValue =
+  (value) => {
+    const stringValue =
+      String(
+        value ?? ''
+      );
+
+    if (
+      /^[=+\-@\t\r\n]/.test(
+        stringValue
+      )
+    ) {
+      return `'${stringValue}`;
+    }
+
+    return stringValue;
+  };
 
 const toCsv = (
   rows,
@@ -707,8 +713,8 @@ const toCsv = (
 ) => {
   const escape =
     (value) =>
-      `"${String(
-        value ?? ''
+      `"${sanitizeCsvValue(
+        value
       ).replace(
         /"/g,
         '""'
@@ -843,7 +849,6 @@ const exportOverdueCsv =
       ]
     );
   };
-
 
 const exportInventoryCsv =
   async () => {
