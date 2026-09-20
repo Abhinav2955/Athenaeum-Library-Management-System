@@ -78,7 +78,6 @@ export default function VerifyEmail() {
     setResending,
   ] = useState(false);
 
-  
   useEffect(() => {
     if (
       resendSeconds <= 0
@@ -109,7 +108,6 @@ export default function VerifyEmail() {
     resendSeconds,
   ]);
 
- 
   useEffect(() => {
     if (!token) {
       return;
@@ -313,7 +311,6 @@ export default function VerifyEmail() {
     );
   }
 
- 
   return (
     <main className="flex min-h-screen items-center justify-center bg-paper px-4">
       <div className="w-full max-w-md rounded-card border border-hairline bg-white p-7">
@@ -344,6 +341,18 @@ export default function VerifyEmail() {
         <p className="mt-5 text-sm text-ink-muted">
           Open the verification email and click the link. Once verification succeeds, you will be signed in automatically.
         </p>
+
+        <div className="mt-4 rounded-card border border-hairline bg-paper px-4 py-3">
+          <p className="text-sm text-ink-muted">
+            Can&apos;t find the email? Check your
+            {' '}
+            <span className="font-medium text-ink">
+              Spam or Junk folder
+            </span>
+            {' '}
+            as the verification email may have been filtered there.
+          </p>
+        </div>
 
         {message && (
           <div className="mt-5 rounded-card border border-status-success bg-status-successBg px-3 py-2 text-sm text-status-success">
