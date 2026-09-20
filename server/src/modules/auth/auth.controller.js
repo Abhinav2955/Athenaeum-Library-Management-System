@@ -5,31 +5,78 @@ const env = require('../../config/env');
 
 const REFRESH_COOKIE_NAME = env.REFRESH_COOKIE_NAME;
 
+const expiryToMilliseconds = (
+  expiresIn
+) => {
+  const match =
+    /^(\d+)([smhd])$/.exec(
+      expiresIn
+    );
+
+  if (!match) {
+    throw new Error(
+      'Invalid JWT_REFRESH_EXPIRES_IN value'
+    );
+  }
+
+  const value =
+    Number(
+      match[1]
+    );
+
+  const multiplier = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  }[match[2]];
+
+  return value * multiplier;
+};
+
 const REFRESH_COOKIE_MAX_AGE =
-  7 *
-  24 *
-  60 *
-  60 *
-  1000;
+  expiryToMilliseconds(
+    env.JWT_REFRESH_EXPIRES_IN
+  );
 
 const refreshCookieOptions = {
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
+  secure:
+    env.NODE_ENV ===
+    'production',
   sameSite:
-    env.NODE_ENV === 'production'
+    env.NODE_ENV ===
+    'production'
       ? 'none'
       : 'lax',
   path: '/api/v1/auth',
-  maxAge: REFRESH_COOKIE_MAX_AGE,
+  maxAge:
+    REFRESH_COOKIE_MAX_AGE,
 };
 
-const safeUser = (user) => {
+const refreshCookieClearOptions = {
+  httpOnly: true,
+  secure:
+    env.NODE_ENV ===
+    'production',
+  sameSite:
+    env.NODE_ENV ===
+    'production'
+      ? 'none'
+      : 'lax',
+  path: '/api/v1/auth',
+};
+
+const safeUser = (
+  user
+) => {
   if (!user) {
     return null;
   }
 
   const data =
-    typeof user.toJSON === 'function'
+    typeof user.toJSON ===
+    'function'
       ? user.toJSON()
       : { ...user };
 
@@ -44,9 +91,14 @@ const safeUser = (user) => {
   return data;
 };
 
-const getMeta = (req) => ({
+const getMeta = (
+  req
+) => ({
   userAgent:
-    req.get('user-agent') || null,
+    req.get(
+      'user-agent'
+    ) || null,
+
   ipAddress:
     req.ip || null,
 });
@@ -67,18 +119,7 @@ const clearRefreshCookie = (
 ) => {
   res.clearCookie(
     REFRESH_COOKIE_NAME,
-    {
-      httpOnly: true,
-      secure:
-        env.NODE_ENV ===
-        'production',
-      sameSite:
-        env.NODE_ENV ===
-        'production'
-          ? 'none'
-          : 'lax',
-      path: '/api/v1/auth',
-    }
+    refreshCookieClearOptions
   );
 };
 
@@ -97,7 +138,10 @@ const register =
         201,
         {
           user:
-            safeUser(user),
+            safeUser(
+              user
+            ),
+
           requiresVerification:
             true,
         },
@@ -130,6 +174,7 @@ const login =
             safeUser(
               result.user
             ),
+
           accessToken:
             result.accessToken,
         },
@@ -162,6 +207,7 @@ const verifyEmail =
             safeUser(
               result.user
             ),
+
           accessToken:
             result.accessToken,
         },
@@ -218,6 +264,7 @@ const refresh =
             safeUser(
               result.user
             ),
+
           accessToken:
             result.accessToken,
         },
@@ -241,7 +288,9 @@ const logout =
         rawToken
       );
 
-      clearRefreshCookie(res);
+      clearRefreshCookie(
+        res
+      );
 
       return new ApiResponse(
         200,
@@ -259,7 +308,9 @@ const me =
     ) => {
       return new ApiResponse(
         200,
-        safeUser(req.user)
+        safeUser(
+          req.user
+        )
       ).send(res);
     }
   );
@@ -273,11 +324,15 @@ const changePassword =
       await authService
         .changePassword(
           req.user.id,
-          req.body.currentPassword,
-          req.body.newPassword
+          req.body
+            .currentPassword,
+          req.body
+            .newPassword
         );
 
-      clearRefreshCookie(res);
+      clearRefreshCookie(
+        res
+      );
 
       return new ApiResponse(
         200,
@@ -318,7 +373,9 @@ const resetPassword =
           req.body.password
         );
 
-      clearRefreshCookie(res);
+      clearRefreshCookie(
+        res
+      );
 
       return new ApiResponse(
         200,
