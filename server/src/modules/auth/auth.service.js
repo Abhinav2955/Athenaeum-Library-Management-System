@@ -35,6 +35,28 @@ const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000;
 
+const escapeHtml = (
+  value
+) =>
+  String(
+    value ?? ''
+  ).replace(
+    /[&<>"']/g,
+    (character) => {
+      const entities = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      };
+
+      return entities[
+        character
+      ];
+    }
+  );
+
 const msFromExpiry = (
   expiresIn
 ) => {
@@ -195,6 +217,16 @@ const sendVerificationEmail =
         rawToken
       )}`;
 
+    const safeName =
+      escapeHtml(
+        user.name
+      );
+
+    const safeLink =
+      escapeHtml(
+        link
+      );
+
     try {
       await withTimeout(
         queueEmail({
@@ -205,9 +237,9 @@ const sendVerificationEmail =
             'Verify your Athenaeum account',
 
           html: `
-            <p>Hi ${user.name},</p>
+            <p>Hi ${safeName},</p>
             <p>Welcome to Athenaeum Library. Please verify your email address before signing in.</p>
-            <p><a href="${link}">Verify my email</a></p>
+            <p><a href="${safeLink}">Verify my email</a></p>
             <p>This link expires in 24 hours.</p>
             <p>If you did not create this account, you can ignore this email.</p>
           `,
@@ -856,6 +888,16 @@ const forgotPassword =
         rawToken
       )}`;
 
+    const safeName =
+      escapeHtml(
+        user.name
+      );
+
+    const safeLink =
+      escapeHtml(
+        link
+      );
+
     try {
       await withTimeout(
         queueEmail({
@@ -866,9 +908,9 @@ const forgotPassword =
             'Reset your Athenaeum password',
 
           html: `
-            <p>Hi ${user.name},</p>
+            <p>Hi ${safeName},</p>
             <p>We received a request to reset your password.</p>
-            <p><a href="${link}">Reset my password</a></p>
+            <p><a href="${safeLink}">Reset my password</a></p>
             <p>This link expires in 1 hour.</p>
           `,
         }),
