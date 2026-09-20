@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 const {
   User,
   RefreshToken,
+  sequelize,
 } = require('../../database/models');
 
 const ApiError =
@@ -28,20 +29,11 @@ const {
 } = require('../../utils/token');
 
 const SALT_ROUNDS = 12;
-
 const MAX_FAILED_ATTEMPTS = 5;
-
-const LOCK_DURATION_MS =
-  15 * 60 * 1000;
-
-const VERIFICATION_TOKEN_EXPIRY_MS =
-  24 * 60 * 60 * 1000;
-
-const VERIFICATION_RESEND_COOLDOWN_MS =
-  60 * 1000;
-
-const RESET_TOKEN_EXPIRY_MS =
-  60 * 60 * 1000;
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000;
 
 const msFromExpiry = (
   expiresIn
@@ -122,7 +114,8 @@ const withTimeout = (
 const issueTokenPair =
   async (
     user,
-    meta = {}
+    meta = {},
+    transaction = null
   ) => {
     const accessToken =
       signAccessToken(
@@ -134,35 +127,42 @@ const issueTokenPair =
         user
       );
 
-    await RefreshToken.create({
-      userId:
-        user.id,
+    const storedRefreshToken =
+      await RefreshToken.create(
+        {
+          userId:
+            user.id,
 
-      tokenHash:
-        hashToken(
-          refreshToken
-        ),
+          tokenHash:
+            hashToken(
+              refreshToken
+            ),
 
-      expiresAt:
-        new Date(
-          Date.now() +
-            msFromExpiry(
-              env.JWT_REFRESH_EXPIRES_IN
-            )
-        ),
+          expiresAt:
+            new Date(
+              Date.now() +
+                msFromExpiry(
+                  env.JWT_REFRESH_EXPIRES_IN
+                )
+            ),
 
-      userAgent:
-        meta.userAgent ||
-        null,
+          userAgent:
+            meta.userAgent ||
+            null,
 
-      ipAddress:
-        meta.ipAddress ||
-        null,
-    });
+          ipAddress:
+            meta.ipAddress ||
+            null,
+        },
+        {
+          transaction,
+        }
+      );
 
     return {
       accessToken,
       refreshToken,
+      storedRefreshToken,
     };
   };
 
@@ -336,7 +336,10 @@ const verifyEmail =
 
     return {
       user,
-      ...tokens,
+      accessToken:
+        tokens.accessToken,
+      refreshToken:
+        tokens.refreshToken,
     };
   };
 
@@ -547,7 +550,10 @@ const login =
 
     return {
       user,
-      ...tokens,
+      accessToken:
+        tokens.accessToken,
+      refreshToken:
+        tokens.refreshToken,
     };
   };
 
@@ -575,129 +581,147 @@ const refresh =
       );
     }
 
+    if (
+      payload.type !==
+      'refresh'
+    ) {
+      throw ApiError.unauthorized(
+        'Invalid refresh token'
+      );
+    }
+
     const tokenHash =
       hashToken(
         rawToken
       );
 
-    const stored =
-      await RefreshToken.findOne({
-        where: {
-          userId:
-            payload.sub,
+    return sequelize.transaction(
+      async (t) => {
+        const stored =
+          await RefreshToken.findOne({
+            where: {
+              userId:
+                payload.sub,
 
-          tokenHash,
-        },
-      });
-
-    if (!stored) {
-      throw ApiError.unauthorized(
-        'Refresh token not recognized'
-      );
-    }
-
-    if (
-      stored.revokedAt
-    ) {
-      await RefreshToken.update(
-        {
-          revokedAt:
-            new Date(),
-        },
-        {
-          where: {
-            userId:
-              payload.sub,
-
-            revokedAt: {
-              [Op.is]:
-                null,
+              tokenHash,
             },
-          },
+
+            transaction:
+              t,
+
+            lock:
+              t.LOCK.UPDATE,
+          });
+
+        if (!stored) {
+          throw ApiError.unauthorized(
+            'Refresh token not recognized'
+          );
         }
-      );
 
-      throw ApiError.unauthorized(
-        'Refresh token reuse detected — all sessions revoked'
-      );
-    }
+        if (
+          stored.revokedAt
+        ) {
+          await RefreshToken.update(
+            {
+              revokedAt:
+                new Date(),
+            },
+            {
+              where: {
+                userId:
+                  payload.sub,
 
-    if (
-      stored.expiresAt <
-      new Date()
-    ) {
-      throw ApiError.unauthorized(
-        'Refresh token expired'
-      );
-    }
+                revokedAt: {
+                  [Op.is]:
+                    null,
+                },
+              },
 
-    const user =
-      await User.findByPk(
-        payload.sub
-      );
+              transaction:
+                t,
+            }
+          );
 
-    if (!user) {
-      throw ApiError.unauthorized(
-        'User no longer exists'
-      );
-    }
+          throw ApiError.unauthorized(
+            'Refresh token reuse detected — all sessions revoked'
+          );
+        }
 
-    if (
-      !user.isEmailVerified &&
-      env.NODE_ENV !==
-        'test'
-    ) {
-      throw ApiError.forbidden(
-        'Please verify your email before continuing'
-      );
-    }
+        if (
+          stored.expiresAt <
+          new Date()
+        ) {
+          throw ApiError.unauthorized(
+            'Refresh token expired'
+          );
+        }
 
-    if (
-      user.membershipStatus ===
-      'suspended'
-    ) {
-      throw ApiError.forbidden(
-        'Your account has been suspended'
-      );
-    }
+        const user =
+          await User.findByPk(
+            payload.sub,
+            {
+              transaction:
+                t,
+            }
+          );
 
-    const {
-      accessToken,
-      refreshToken:
-        newRefreshToken,
-    } =
-      await issueTokenPair(
-        user,
-        meta
-      );
+        if (!user) {
+          throw ApiError.unauthorized(
+            'User no longer exists'
+          );
+        }
 
-    const newStored =
-      await RefreshToken.findOne({
-        where: {
-          userId:
-            user.id,
+        if (
+          !user.isEmailVerified &&
+          env.NODE_ENV !==
+            'test'
+        ) {
+          throw ApiError.forbidden(
+            'Please verify your email before continuing'
+          );
+        }
 
-          tokenHash:
-            hashToken(
-              newRefreshToken
-            ),
-        },
-      });
+        if (
+          user.membershipStatus ===
+          'suspended'
+        ) {
+          throw ApiError.forbidden(
+            'Your account has been suspended'
+          );
+        }
 
-    stored.revokedAt =
-      new Date();
+        const tokens =
+          await issueTokenPair(
+            user,
+            meta,
+            t
+          );
 
-    stored.replacedByTokenId =
-      newStored.id;
+        stored.revokedAt =
+          new Date();
 
-    await stored.save();
+        stored.replacedByTokenId =
+          tokens
+            .storedRefreshToken
+            .id;
 
-    return {
-      user,
-      accessToken,
-      refreshToken:
-        newRefreshToken,
-    };
+        await stored.save({
+          transaction:
+            t,
+        });
+
+        return {
+          user,
+
+          accessToken:
+            tokens.accessToken,
+
+          refreshToken:
+            tokens.refreshToken,
+        };
+      }
+    );
   };
 
 const logout =
