@@ -15,9 +15,7 @@ BookCopy.init(
       allowNull: false,
       defaultValue: 'available',
     },
-    // Set only while status === 'reserved' — holds this copy exclusively for
-    // one member instead of releasing it back to the general available pool.
-    reservedForUserId: { type: DataTypes.UUID, allowNull: true, field: 'reserved_for_user_id' },
+     reservedForUserId: { type: DataTypes.UUID, allowNull: true, field: 'reserved_for_user_id' },
   },
   { sequelize, modelName: 'BookCopy', tableName: 'book_copies' }
 );

@@ -12,9 +12,7 @@ const {
 const ApiError =
   require('../../utils/ApiError');
 
-/*
- * Staff member search.
- */
+
 const searchMembers = async ({
   search,
   limit = 10,
@@ -73,9 +71,7 @@ const searchMembers = async ({
   );
 };
 
-/*
- * Return a complete staff-facing member profile.
- */
+
 const getMemberById = async (
   memberId
 ) => {
@@ -107,9 +103,7 @@ const getMemberById = async (
   const now =
     new Date();
 
-  /*
-   * Current non-overdue loans.
-   */
+  
   const activeLoans =
     await BorrowRecord.count({
       where: {
@@ -126,15 +120,7 @@ const getMemberById = async (
       },
     });
 
-  /*
-   * Important:
-   *
-   * Part 2 made dueAt authoritative.
-   *
-   * So an "active" record whose dueAt has passed
-   * also counts as overdue even if cron has not
-   * updated the stored status yet.
-   */
+  
   const overdueLoans =
     await BorrowRecord.count({
       where: {
@@ -208,9 +194,7 @@ const getMemberById = async (
       0
     );
 
-  /*
-   * Recent borrowing activity.
-   */
+  
   const recentLoans =
     await BorrowRecord.findAll({
       where: {
@@ -259,9 +243,7 @@ const getMemberById = async (
       limit: 10,
     });
 
-  /*
-   * Current reservations.
-   */
+  
   const reservations =
     await Reservation.findAll({
       where: {
@@ -329,12 +311,7 @@ const getMemberById = async (
   };
 };
 
-/*
- * Staff membership-state management.
- *
- * We intentionally manage only MEMBER accounts.
- * Admin/librarian accounts cannot be changed here.
- */
+
 const updateMembershipStatus =
   async (
     memberId,

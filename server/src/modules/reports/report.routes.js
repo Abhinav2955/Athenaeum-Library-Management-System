@@ -21,9 +21,7 @@ const {
 const router =
   express.Router();
 
-/*
- * Entire reporting module is staff-only.
- */
+
 router.use(
   authenticate,
   authorize(

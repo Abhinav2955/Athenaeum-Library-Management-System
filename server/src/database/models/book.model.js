@@ -34,14 +34,7 @@ Book.init(
   modelName: 'Book',
   tableName: 'books',
   paranoid: true,
-  // Declared here (not just in the migration) because sequelize.sync()
-  // — used by every test file's beforeAll, and by the app itself in
-  // development — only knows about indexes defined on the model. A
-  // FULLTEXT index that exists solely as raw SQL inside a migration file
-  // is invisible to sync(), so MATCH...AGAINST queries would 500 with
-  // "Can't find FULLTEXT index matching the column list" in any
-  // environment that builds its schema via sync() instead of migrate.
-  indexes: [{ name: 'ft_books_title_description', type: 'FULLTEXT', fields: ['title', 'description'] }],
+   indexes: [{ name: 'ft_books_title_description', type: 'FULLTEXT', fields: ['title', 'description'] }],
 }
 );
 

@@ -79,13 +79,7 @@ const registerAndLogin =
       .data.accessToken;
   };
 
-/*
- * Audit writes happen after the HTTP response
- * finishes.
- *
- * Poll briefly instead of using an arbitrary large
- * sleep.
- */
+
 const waitForAudit =
   async (
     where,
@@ -338,9 +332,7 @@ describe(
           res.statusCode
         ).toBe(409);
 
-        /*
-         * Give finish handler a chance to run.
-         */
+       
         await new Promise(
           (resolve) =>
             setTimeout(

@@ -3,8 +3,6 @@ const asyncHandler = require('../utils/asyncHandler');
 const { verifyAccessToken } = require('../utils/token');
 const { User } = require('../database/models');
 
-// Verifies the access token on protected routes and attaches the
-// authenticated user (minus sensitive fields) to req.user.
 const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -30,7 +28,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw ApiError.forbidden('Account is suspended');
   }
 
-  req.user = user; // full model instance; controllers use .toSafeJSON() when returning it
+  req.user = user; 
   next();
 });
 

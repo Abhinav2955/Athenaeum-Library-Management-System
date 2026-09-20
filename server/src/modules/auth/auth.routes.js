@@ -81,12 +81,7 @@ router.post(
   controller.verifyEmail
 );
 
-/*
- * No authenticate middleware here.
- *
- * An unverified account intentionally has no
- * authenticated session.
- */
+
 router.post(
   '/resend-verification',
   verificationResendLimiter,

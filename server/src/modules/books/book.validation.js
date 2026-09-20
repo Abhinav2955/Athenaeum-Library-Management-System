@@ -19,9 +19,7 @@ const createBookSchema = z.object({
     authorIds: z.array(z.string().uuid()).optional().default([]),
     categoryIds: z.array(z.string().uuid()).optional().default([]),
 
-    // Creating a catalog entry does NOT create a physical book copy.
-    // Physical inventory is created through addCopies().
-    totalCopies: z.coerce.number().int().min(0).default(0),
+     totalCopies: z.coerce.number().int().min(0).default(0),
   }),
 });
 

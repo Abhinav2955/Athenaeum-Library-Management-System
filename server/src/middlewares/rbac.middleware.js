@@ -1,8 +1,5 @@
 const ApiError = require('../utils/ApiError');
 
-// Usage: router.post('/books', authenticate, authorize('admin', 'librarian'), handler)
-// Kept separate from `authenticate` so route definitions read declaratively
-// and permission logic can evolve (e.g. to permission-based checks) independently.
 const authorize = (...allowedRoles) => (req, res, next) => {
   if (!req.user) {
     return next(ApiError.unauthorized());

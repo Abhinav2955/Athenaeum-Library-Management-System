@@ -8,15 +8,7 @@ const {
   BookCopy,
 } = require('../src/database/models');
 
-/*
- * One-time repair utility.
- *
- * This does NOT create or delete physical copies.
- *
- * It simply recalculates Book.totalCopies and
- * Book.availableCopies from the actual BookCopy
- * rows already stored in the database.
- */
+
 
 const reconcileInventory =
   async () => {
@@ -43,12 +35,7 @@ const reconcileInventory =
       for (
         const book of books
       ) {
-        /*
-         * Current project semantics:
-         *
-         * lost copies have been retired from
-         * active inventory.
-         */
+        
         const totalCopies =
           await BookCopy.count({
             where: {
@@ -62,11 +49,7 @@ const reconcileInventory =
             },
           });
 
-        /*
-         * Only BookCopy rows with status
-         * "available" count toward
-         * Book.availableCopies.
-         */
+        
         const availableCopies =
           await BookCopy.count({
             where: {

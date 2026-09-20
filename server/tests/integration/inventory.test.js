@@ -97,16 +97,12 @@ const createBook = async ({
 };
 
 beforeAll(async () => {
-  /*
-   * This file gets its own clean database.
-   */
+  
   await sequelize.sync({
     force: true,
   });
 
-  /*
-   * Create ordinary members.
-   */
+  
   member1Token =
     await registerAndLogin(member1);
 
@@ -116,14 +112,10 @@ beforeAll(async () => {
   member3Token =
     await registerAndLogin(member3);
 
-  /*
-   * Register admin initially as a normal user.
-   */
+  
   await registerAndLogin(admin);
 
-  /*
-   * Promote that account directly in the test DB.
-   */
+  
   await User.update(
     {
       role: 'admin',
@@ -135,22 +127,12 @@ beforeAll(async () => {
     }
   );
 
-  /*
-   * Login again so the JWT contains role=admin.
-   */
+  
   adminToken =
     await registerAndLogin(admin);
 });
 
-/*
- * IMPORTANT:
- *
- * Do not close Sequelize in afterAll().
- *
- * Your existing project runs integration tests
- * sequentially and shares infrastructure such as
- * Sequelize / Redis / queues.
- */
+
 
 describe(
   'Part 1 - Inventory consistency',
@@ -420,9 +402,7 @@ describe(
             copies: 1,
           });
 
-        /*
-         * Member 1 borrows the only copy.
-         */
+        
         const checkoutResponse =
           await request(app)
             .post(
@@ -444,9 +424,7 @@ describe(
           checkoutResponse.body
             .data.id;
 
-        /*
-         * Member 2 joins the reservation queue.
-         */
+        
         const reservationResponse =
           await request(app)
             .post(
@@ -464,17 +442,7 @@ describe(
           reservationResponse.statusCode
         ).toBe(201);
 
-        /*
-         * Member 1 returns it.
-         *
-         * The copy should go directly:
-         *
-         * borrowed -> reserved
-         *
-         * NOT:
-         *
-         * borrowed -> available
-         */
+        
         const returnResponse =
           await request(app)
             .post(
@@ -546,9 +514,7 @@ describe(
             copies: 1,
           });
 
-        /*
-         * Member 1 borrows.
-         */
+        
         const checkoutResponse =
           await request(app)
             .post(
@@ -566,9 +532,7 @@ describe(
           checkoutResponse.body
             .data.id;
 
-        /*
-         * Member 2 reserves.
-         */
+       
         await request(app)
           .post(
             '/api/v1/reservations'
@@ -581,9 +545,6 @@ describe(
             bookId,
           });
 
-        /*
-         * Returned copy becomes reserved.
-         */
         await request(app)
           .post(
             `/api/v1/borrow/${recordId}/return`
@@ -602,9 +563,7 @@ describe(
           book.availableCopies
         ).toBe(0);
 
-        /*
-         * Member 2 collects held copy.
-         */
+        
         const pickupResponse =
           await request(app)
             .post(
@@ -627,13 +586,7 @@ describe(
             bookId
           );
 
-        /*
-         * This is the important assertion.
-         *
-         * It stays ZERO.
-         *
-         * There must be no second decrement.
-         */
+        
         expect(
           book.availableCopies
         ).toBe(0);
@@ -673,9 +626,6 @@ describe(
             copies: 1,
           });
 
-        /*
-         * Member 1 borrows.
-         */
         const checkoutResponse =
           await request(app)
             .post(
@@ -693,9 +643,7 @@ describe(
           checkoutResponse.body
             .data.id;
 
-        /*
-         * Member 2 reserves.
-         */
+        
         const reservationResponse =
           await request(app)
             .post(
@@ -713,9 +661,7 @@ describe(
           reservationResponse.body
             .data.id;
 
-        /*
-         * Return makes reservation READY.
-         */
+        
         await request(app)
           .post(
             `/api/v1/borrow/${recordId}/return`
@@ -743,9 +689,7 @@ describe(
           book.availableCopies
         ).toBe(0);
 
-        /*
-         * Member 2 cancels.
-         */
+       
         const cancelResponse =
           await request(app)
             .post(
@@ -804,9 +748,7 @@ describe(
             copies: 1,
           });
 
-        /*
-         * Member 1 borrows.
-         */
+        
         const checkoutResponse =
           await request(app)
             .post(
@@ -824,9 +766,7 @@ describe(
           checkoutResponse.body
             .data.id;
 
-        /*
-         * Member 2 = first reservation.
-         */
+        
         const member2Reservation =
           await request(app)
             .post(
@@ -840,9 +780,7 @@ describe(
               bookId,
             });
 
-        /*
-         * Member 3 = second reservation.
-         */
+        
         await request(app)
           .post(
             '/api/v1/reservations'
@@ -855,9 +793,6 @@ describe(
             bookId,
           });
 
-        /*
-         * Return -> member 2 becomes READY.
-         */
         await request(app)
           .post(
             `/api/v1/borrow/${recordId}/return`
@@ -871,9 +806,7 @@ describe(
           member2Reservation.body
             .data.id;
 
-        /*
-         * Member 2 cancels READY hold.
-         */
+        
         const cancelResponse =
           await request(app)
             .post(
@@ -888,10 +821,7 @@ describe(
           cancelResponse.statusCode
         ).toBe(200);
 
-        /*
-         * Copy must remain reserved because
-         * Member 3 is next.
-         */
+        
         const book =
           await Book.findByPk(
             bookId
@@ -955,9 +885,7 @@ describe(
             copies: 1,
           });
 
-        /*
-         * Member 1 borrows.
-         */
+        
         const checkoutResponse =
           await request(app)
             .post(
@@ -975,9 +903,7 @@ describe(
           checkoutResponse.body
             .data.id;
 
-        /*
-         * Member 2 reserves.
-         */
+       
         const reservationResponse =
           await request(app)
             .post(
@@ -995,9 +921,6 @@ describe(
           reservationResponse.body
             .data.id;
 
-        /*
-         * Return -> reservation READY.
-         */
         await request(app)
           .post(
             `/api/v1/borrow/${recordId}/return`
@@ -1007,9 +930,7 @@ describe(
             `Bearer ${adminToken}`
           );
 
-        /*
-         * Force expiration time into the past.
-         */
+        
         await Reservation.update(
           {
             expiresAt:
@@ -1026,10 +947,6 @@ describe(
           }
         );
 
-        /*
-         * Run the same service used by your
-         * scheduled maintenance process.
-         */
         const expiredCount =
           await reservationService
             .expireStaleHolds();
@@ -1154,10 +1071,7 @@ describe(
             copies: 2,
           });
 
-        /*
-         * Someone attempts to manipulate the
-         * aggregate inventory through PUT /books.
-         */
+        
         const response =
           await request(app)
             .put(
@@ -1190,10 +1104,7 @@ describe(
           'Inventory Protection Updated'
         );
 
-        /*
-         * Inventory must remain based on the
-         * actual two physical BookCopy rows.
-         */
+        
         expect(
           book.totalCopies
         ).toBe(2);

@@ -17,12 +17,7 @@ const {
 
 const startEmailWorker =
   () => {
-    /*
-     * Lower concurrency in development.
-     *
-     * Production can process several email jobs
-     * simultaneously.
-     */
+    
     const concurrency =
       env.NODE_ENV ===
       'production'
@@ -76,11 +71,7 @@ const startEmailWorker =
         const currentAttempt =
           job.attemptsMade;
 
-        /*
-         * Only call it a final failure when the
-         * configured retry limit has actually been
-         * reached.
-         */
+        
         if (
           currentAttempt >=
           maxAttempts

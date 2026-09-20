@@ -7,13 +7,7 @@ const {
   User,
 } = require('../../database/models');
 
-/*
- * Audit logging must never contain secrets.
- *
- * Even if a future endpoint accidentally passes a
- * request body containing one of these fields,
- * it is removed before persistence.
- */
+
 const SENSITIVE_KEY_PATTERN =
   /password|token|secret|authorization|cookie|signature/i;
 

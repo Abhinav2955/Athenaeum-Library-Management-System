@@ -30,9 +30,7 @@ router.use(
   authenticate
 );
 
-/*
- * Checkout.
- */
+
 router.post(
   '/checkout',
   validate(
@@ -41,21 +39,7 @@ router.post(
   controller.checkout
 );
 
-/*
- * Staff return.
- *
- * body:
- *
- * {
- *   condition: "good"
- * }
- *
- * OR
- *
- * {
- *   condition: "damaged"
- * }
- */
+
 router.post(
   '/:id/return',
   authorize(
@@ -68,9 +52,7 @@ router.post(
   controller.returnBook
 );
 
-/*
- * Staff can declare a checked-out loan lost.
- */
+
 router.post(
   '/:id/lost',
   authorize(
@@ -108,9 +90,7 @@ router.get(
   controller.allRecords
 );
 
-/*
- * Physical copy management.
- */
+
 router.post(
   '/copies',
   authorize(
@@ -135,9 +115,7 @@ router.get(
   controller.listCopies
 );
 
-/*
- * Repair / condition lifecycle.
- */
+
 router.patch(
   '/copies/:id/status',
   authorize(

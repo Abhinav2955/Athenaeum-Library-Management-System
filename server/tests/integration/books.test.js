@@ -43,20 +43,14 @@ beforeAll(async () => {
     force: true,
   });
 
-  /*
-   * Create ordinary member.
-   */
+  
   memberToken =
     await registerAndLogin(member);
 
-  /*
-   * Register admin account first.
-   */
+  
   await registerAndLogin(admin);
 
-  /*
-   * Promote directly in test database.
-   */
+  
   await User.update(
     {
       role: 'admin',
@@ -68,9 +62,7 @@ beforeAll(async () => {
     }
   );
 
-  /*
-   * Login again so JWT contains admin role.
-   */
+  
   adminToken =
     await registerAndLogin(admin);
 });
@@ -125,14 +117,7 @@ describe(
     it(
       'allows an admin to create a catalog book',
       async () => {
-        /*
-         * IMPORTANT:
-         *
-         * Creating a Book now creates only
-         * the catalog/title record.
-         *
-         * Physical copies are added separately.
-         */
+        
         const res =
           await request(app)
             .post('/api/v1/books')
@@ -179,9 +164,7 @@ describe(
           createdBookId
         ).toBeDefined();
 
-        /*
-         * Add the actual 3 physical copies.
-         */
+        
         const copyRes =
           await request(app)
             .post(
@@ -205,9 +188,7 @@ describe(
           copyRes.statusCode
         ).toBe(201);
 
-        /*
-         * Verify three real BookCopy rows exist.
-         */
+        
         const copyCount =
           await BookCopy.count({
             where: {
@@ -220,9 +201,7 @@ describe(
           copyCount
         ).toBe(3);
 
-        /*
-         * Fetch book again.
-         */
+        
         const getRes =
           await request(app)
             .get(
@@ -358,11 +337,7 @@ describe(
               title:
                 'Clean Architecture (2nd Edition)',
 
-              /*
-               * Even if somebody attempts
-               * to manipulate this value,
-               * updateBook must ignore it.
-               */
+              
               totalCopies:
                 999,
             });
@@ -377,10 +352,7 @@ describe(
           'Clean Architecture (2nd Edition)'
         );
 
-        /*
-         * Inventory must remain tied to
-         * the real three BookCopy rows.
-         */
+        
         expect(
           res.body.data.totalCopies
         ).toBe(3);

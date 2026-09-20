@@ -22,9 +22,7 @@ const {
 const router =
   express.Router();
 
-/*
- * Entire members module is staff-only.
- */
+
 router.use(
   authenticate
 );
@@ -36,9 +34,7 @@ router.use(
   )
 );
 
-/*
- * Search members.
- */
+
 router.get(
   '/',
   validate(
@@ -47,9 +43,7 @@ router.get(
   controller.searchMembers
 );
 
-/*
- * Complete member profile.
- */
+
 router.get(
   '/:id',
   validate(
@@ -58,9 +52,7 @@ router.get(
   controller.getMember
 );
 
-/*
- * Activate / suspend / expire membership.
- */
+
 router.patch(
   '/:id/status',
   validate(

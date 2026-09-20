@@ -40,13 +40,7 @@ const authLimiter =
     legacyHeaders:
       false,
 
-    /*
-     * Successful login/register requests do not
-     * count toward brute-force protection.
-     *
-     * DO NOT use this limiter as the only protection
-     * for resend-verification.
-     */
+    
     skipSuccessfulRequests:
       true,
 
@@ -59,16 +53,7 @@ const authLimiter =
     },
   });
 
-/*
- * PART 10.1
- *
- * Secondary protection for verification resend.
- *
- * Service-level cooldown is the main rule.
- *
- * This limiter protects against large bursts even
- * before the service is reached.
- */
+
 const verificationResendLimiter =
   rateLimit({
     windowMs:

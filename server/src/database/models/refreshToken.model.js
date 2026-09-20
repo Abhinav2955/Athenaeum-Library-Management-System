@@ -2,8 +2,6 @@ const { DataTypes, Model } = require('sequelize');
 const { sequelize } = require('../../config/db');
 const User = require('./user.model');
 
-// Storing refresh tokens (hashed) lets us revoke individual sessions
-// and detect reuse of a rotated-out token (a signal of theft).
 class RefreshToken extends Model {}
 
 RefreshToken.init(

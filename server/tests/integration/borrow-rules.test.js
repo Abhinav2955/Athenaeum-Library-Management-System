@@ -120,9 +120,7 @@ beforeAll(async () => {
     force: true,
   });
 
-  /*
-   * ACTIVE MEMBER
-   */
+  
   activeMemberToken =
     await registerAndLogin(
       activeCredentials
@@ -136,9 +134,7 @@ beforeAll(async () => {
       },
     });
 
-  /*
-   * SUSPENDED MEMBER
-   */
+  
   suspendedMemberToken =
     await registerAndLogin(
       suspendedCredentials
@@ -157,9 +153,7 @@ beforeAll(async () => {
       'suspended',
   });
 
-  /*
-   * EXPIRED MEMBER
-   */
+  
   expiredMemberToken =
     await registerAndLogin(
       expiredCredentials
@@ -178,9 +172,7 @@ beforeAll(async () => {
       'expired',
   });
 
-  /*
-   * ADMIN
-   */
+  
   await registerAndLogin(
     adminCredentials
   );
@@ -305,10 +297,7 @@ describe(
     it(
       'blocks new borrowing when an active-status loan is already past due',
       async () => {
-        /*
-         * Create separate member so previous test
-         * loans do not interfere.
-         */
+        
         const credentials = {
           name:
             'Past Due Member',
@@ -357,12 +346,7 @@ describe(
           checkout.statusCode
         ).toBe(201);
 
-        /*
-         * Simulate the scheduler gap:
-         *
-         * status remains ACTIVE,
-         * but dueAt is in the past.
-         */
+        
         await BorrowRecord.update(
           {
             status:

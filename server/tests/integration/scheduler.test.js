@@ -50,14 +50,7 @@ const createBookWithCopy = async (
   isbn,
   title
 ) => {
-  /*
-   * Part 1 architecture:
-   *
-   * POST /books creates only the catalog record.
-   *
-   * Physical copies are created separately through
-   * /borrow/copies.
-   */
+  
   const bookResponse =
     await request(app)
       .post('/api/v1/books')
@@ -106,10 +99,7 @@ beforeAll(async () => {
     force: true,
   });
 
-  /*
-   * Main member used for the due-soon and overdue
-   * scheduler tests.
-   */
+  
   memberToken =
     await registerAndLogin(
       member
@@ -126,16 +116,12 @@ beforeAll(async () => {
     memberUser
   ).not.toBeNull();
 
-  /*
-   * Register admin.
-   */
+  
   await registerAndLogin(
     admin
   );
 
-  /*
-   * Promote account directly in the test database.
-   */
+  
   await User.update(
     {
       role: 'admin',
@@ -147,22 +133,14 @@ beforeAll(async () => {
     }
   );
 
-  /*
-   * Login again so JWT contains the admin role.
-   */
+  
   adminToken =
     await registerAndLogin(
       admin
     );
 });
 
-/*
- * No afterAll sequelize/redis close.
- *
- * The integration suite shares these resources while
- * running under --runInBand and the test command uses
- * --forceExit.
- */
+
 
 describe(
   'Part 9 - scheduled circulation maintenance',
@@ -203,13 +181,7 @@ describe(
           dueSoonRecordId
         ).toBeDefined();
 
-        /*
-         * Force this loan to become due 24 hours
-         * from now.
-         *
-         * That falls inside Part 9's 48-hour
-         * reminder window.
-         */
+       
         await BorrowRecord.update(
           {
             status: 'active',
@@ -262,10 +234,7 @@ describe(
     it(
       'does not create duplicate due-soon notifications during the same due window',
       async () => {
-        /*
-         * Count only notifications for the specific
-         * loan created in the previous test.
-         */
+        
         const before =
           await Notification.count({
             where: {
@@ -284,9 +253,7 @@ describe(
           before
         ).toBe(1);
 
-        /*
-         * Run the scheduler repeatedly.
-         */
+        
         await notifyDueSoon();
 
         await notifyDueSoon();
@@ -305,10 +272,7 @@ describe(
             },
           });
 
-        /*
-         * Still exactly one notification for this
-         * current due-date reminder window.
-         */
+        
         expect(
           after
         ).toBe(before);
@@ -348,12 +312,7 @@ describe(
           overdueRecordId
         ).toBeDefined();
 
-        /*
-         * Simulate the cron/scheduler gap:
-         *
-         * DB still says active, but dueAt has already
-         * passed.
-         */
+        
         await BorrowRecord.update(
           {
             status:
@@ -437,11 +396,7 @@ describe(
           before
         ).toBe(1);
 
-        /*
-         * The record is already overdue, therefore
-         * another scheduler run should not create
-         * another notification.
-         */
+        
         await flagOverdueLoans();
 
         await flagOverdueLoans();
@@ -469,21 +424,7 @@ describe(
     it(
       'does not send a due-soon notification for a loan more than 48 hours away',
       async () => {
-        /*
-         * IMPORTANT:
-         *
-         * Do not reuse memberToken here.
-         *
-         * The previous test deliberately gave the
-         * main member an overdue loan.
-         *
-         * Part 2 correctly blocks users who have
-         * overdue loans from checking out another
-         * book.
-         *
-         * Therefore this scheduler scenario gets its
-         * own isolated member.
-         */
+        
         const futureMember = {
           name:
             'Future Scheduler Member',
@@ -542,10 +483,7 @@ describe(
           recordId
         ).toBeDefined();
 
-        /*
-         * Seven days away is well outside the
-         * 48-hour notification window.
-         */
+        
         await BorrowRecord.update(
           {
             status:

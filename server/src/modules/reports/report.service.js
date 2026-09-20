@@ -17,12 +17,7 @@ const {
 const DAY_MS =
   24 * 60 * 60 * 1000;
 
-/*
- * Physical-copy health.
- *
- * Lost rows are retained for audit/history, but
- * they are not part of active library inventory.
- */
+
 const getInventoryHealth =
   async () => {
     const statuses = [
@@ -105,9 +100,7 @@ const getInventoryHealth =
     };
   };
 
-/*
- * Main staff dashboard KPIs.
- */
+
 const getDashboardSummary =
   async () => {
     const now =
@@ -139,9 +132,7 @@ const getDashboardSummary =
           },
         }),
 
-        /*
-         * Current circulation obligations.
-         */
+        
         BorrowRecord.count({
           where: {
             status: {
@@ -153,12 +144,7 @@ const getDashboardSummary =
           },
         }),
 
-        /*
-         * dueAt remains authoritative from Part 2.
-         *
-         * This catches a record even if the scheduler
-         * has not yet changed active -> overdue.
-         */
+        
         BorrowRecord.count({
           where: {
             status: {
@@ -263,12 +249,7 @@ const getDashboardSummary =
           waivedFinesTotal
         ) || 0,
 
-      /*
-       * Compatibility with the old dashboard.
-       *
-       * totalCopies now means ACTIVE physical
-       * inventory, excluding historical lost rows.
-       */
+      
       totalCopies:
         inventory.activeInventory,
 
@@ -405,9 +386,7 @@ const getMostBorrowedBooks =
       );
   };
 
-/*
- * Current overdue obligations.
- */
+
 const getOverdueLoans =
   async () => {
     return BorrowRecord.findAll({
@@ -483,12 +462,7 @@ const getOverdueLoans =
     });
   };
 
-/*
- * Circulation over a selected period.
- *
- * Returns daily checkout + return activity and
- * simple totals for reporting.
- */
+
 const getCirculationStats =
   async (
     days = 30
@@ -726,9 +700,7 @@ const getFineRevenueReport =
     };
   };
 
-/*
- * Safe CSV encoder.
- */
+
 const toCsv = (
   rows,
   columns
@@ -872,12 +844,7 @@ const exportOverdueCsv =
     );
   };
 
-/*
- * Part 10 inventory export.
- *
- * This includes LOST rows intentionally because
- * they remain valuable audit/history records.
- */
+
 const exportInventoryCsv =
   async () => {
     const copies =

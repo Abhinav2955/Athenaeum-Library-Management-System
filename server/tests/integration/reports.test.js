@@ -112,10 +112,7 @@ beforeAll(async () => {
       admin
     );
 
-  /*
-   * Part 1:
-   * create catalog record only.
-   */
+  
   const bookRes =
     await request(app)
       .post(
@@ -140,9 +137,7 @@ beforeAll(async () => {
   bookId =
     bookRes.body.data.id;
 
-  /*
-   * Add physical copy separately.
-   */
+  
   const copiesRes =
     await request(app)
       .post(
@@ -163,9 +158,7 @@ beforeAll(async () => {
     copiesRes.statusCode
   ).toBe(201);
 
-  /*
-   * Borrow one copy.
-   */
+  
   const checkout =
     await request(app)
       .post(
@@ -186,11 +179,7 @@ beforeAll(async () => {
   recordId =
     checkout.body.data.id;
 
-  /*
-   * Make it overdue while keeping stored status
-   * active, proving the report obeys Part 2's
-   * authoritative dueAt rule.
-   */
+  
   await BorrowRecord.update(
     {
       status:
@@ -215,9 +204,7 @@ beforeAll(async () => {
     }
   );
 
-  /*
-   * Give the dashboard some fine data.
-   */
+  
   const targetUser =
     await User.findOne({
       where: {
@@ -301,10 +288,7 @@ describe(
           1
         );
 
-        /*
-         * Stored status is still active, but dueAt
-         * is in the past.
-         */
+       
         expect(
           data.overdueLoans
         ).toBeGreaterThanOrEqual(
@@ -398,14 +382,7 @@ describe(
     it(
       'does not count lost physical copies as active inventory',
       async () => {
-        /*
-         * The unborrowed second copy can be marked
-         * damaged and then remains active inventory.
-         *
-         * Create a historical lost row directly here
-         * to verify reporting semantics without
-         * interfering with the overdue loan.
-         */
+       
         const existing =
           await BookCopy.findOne({
             where: {
@@ -419,9 +396,7 @@ describe(
           existing
         ).not.toBeNull();
 
-        /*
-         * Capture current health first.
-         */
+        
         const before =
           await request(app)
             .get(
