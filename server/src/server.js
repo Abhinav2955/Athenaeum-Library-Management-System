@@ -1,60 +1,252 @@
-const http = require('http');
-const app = require('./app');
-const env = require('./config/env');
-const logger = require('./config/logger');
-const { connectDB, sequelize } = require('./config/db');
+const http =
+  require('http');
+
+const app =
+  require('./app');
+
+const env =
+  require('./config/env');
+
+const logger =
+  require('./config/logger');
+
+const {
+  connectDB,
+  sequelize,
+} =
+  require('./config/db');
+
 require('./database/models');
-const { startScheduledJobs, runMaintenanceSweep } = require('./jobs/scheduler');
-const { initSocket } = require('./sockets/notification.socket');
-const { startEmailWorker } = require('./jobs/workers/email.worker');
+
+const {
+  startScheduledJobs,
+  runMaintenanceSweep,
+} =
+  require('./jobs/scheduler');
+
+const {
+  initSocket,
+} =
+  require('./sockets/notification.socket');
+
+const {
+  startEmailWorker,
+} =
+  require('./jobs/workers/email.worker');
+
+const redis =
+  require('./config/redis');
 
 let server;
+let io;
 let emailWorker;
+let shuttingDown =
+  false;
 
-const start = async () => {
-  await connectDB();
+const start =
+  async () => {
+    await connectDB();
 
-  if (env.NODE_ENV === 'development') {
-    await sequelize.sync({ alter: true });
-    logger.info('🗂️  Models synced (development mode)');
-  }
+    if (
+      env.NODE_ENV ===
+      'development'
+    ) {
+      await sequelize.sync({
+        alter:
+          true,
+      });
 
-  const httpServer = http.createServer(app);
-  initSocket(httpServer);
+      logger.info(
+        'Models synced (development mode)'
+      );
+    }
 
-  server = httpServer.listen(env.PORT, () => {
-    logger.info(`🚀 Server listening on port ${env.PORT} [${env.NODE_ENV}]`);
-  });
+    const httpServer =
+      http.createServer(
+        app
+      );
 
-  startScheduledJobs();
-  emailWorker = startEmailWorker();
-  runMaintenanceSweep().catch((err) => {
-    logger.error('Initial maintenance sweep failed', { error: err.message });
-  });
-};
+    io =
+      initSocket(
+        httpServer
+      );
 
-const shutdown = async (signal) => {
-  logger.info(`${signal} received — shutting down gracefully`);
-  if (server) {
-    server.close(async () => {
+    server =
+      httpServer.listen(
+        env.PORT,
+        () => {
+          logger.info(
+            `Server listening on port ${env.PORT} [${env.NODE_ENV}]`
+          );
+        }
+      );
+
+    startScheduledJobs();
+
+    emailWorker =
+      startEmailWorker();
+
+    runMaintenanceSweep()
+      .catch(
+        (error) => {
+          logger.error(
+            'Initial maintenance sweep failed',
+            {
+              error:
+                error.message,
+            }
+          );
+        }
+      );
+  };
+
+const closeHttpServer =
+  () =>
+    new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        if (!server) {
+          resolve();
+          return;
+        }
+
+        server.close(
+          (error) => {
+            if (error) {
+              reject(
+                error
+              );
+              return;
+            }
+
+            resolve();
+          }
+        );
+      }
+    );
+
+const shutdown =
+  async (
+    signal
+  ) => {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown =
+      true;
+
+    logger.info(
+      `${signal} received, shutting down gracefully`
+    );
+
+    const forceExit =
+      setTimeout(
+        () => {
+          logger.error(
+            'Graceful shutdown timed out'
+          );
+
+          process.exit(1);
+        },
+        10000
+      );
+
+    forceExit.unref();
+
+    try {
+      await closeHttpServer();
+
+      if (io) {
+        await new Promise(
+          (resolve) => {
+            io.close(
+              resolve
+            );
+          }
+        );
+      }
+
+      if (emailWorker) {
+        await emailWorker.close();
+      }
+
+      if (
+        redis.status !==
+        'end'
+      ) {
+        await redis.quit();
+      }
+
       await sequelize.close();
-      if (emailWorker) await emailWorker.close();
-      logger.info('Closed out remaining connections. Exiting.');
+
+      clearTimeout(
+        forceExit
+      );
+
+      logger.info(
+        'All connections closed'
+      );
+
       process.exit(0);
-    });
-    setTimeout(() => process.exit(1), 10000).unref();
-  } else {
-    process.exit(0);
+    } catch (error) {
+      clearTimeout(
+        forceExit
+      );
+
+      logger.error(
+        'Graceful shutdown failed',
+        {
+          error:
+            error.message,
+        }
+      );
+
+      process.exit(1);
+    }
+  };
+
+process.on(
+  'SIGTERM',
+  () =>
+    shutdown(
+      'SIGTERM'
+    )
+);
+
+process.on(
+  'SIGINT',
+  () =>
+    shutdown(
+      'SIGINT'
+    )
+);
+
+process.on(
+  'unhandledRejection',
+  (reason) => {
+    logger.error(
+      'Unhandled promise rejection',
+      {
+        reason,
+      }
+    );
   }
-};
+);
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled promise rejection', { reason });
-});
+start()
+  .catch(
+    (error) => {
+      logger.error(
+        'Failed to start server',
+        {
+          error:
+            error.message,
+        }
+      );
 
-start().catch((err) => {
-  logger.error('Failed to start server', { error: err.message });
-  process.exit(1);
-});
+      process.exit(1);
+    }
+  );
