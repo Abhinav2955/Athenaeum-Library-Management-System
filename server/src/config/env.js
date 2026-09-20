@@ -2,138 +2,168 @@ const { z } = require('zod');
 
 require('dotenv').config();
 
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum([
-      'development',
-      'test',
-      'production',
-    ])
-    .default('development'),
+const envSchema = z
+  .object({
+    NODE_ENV: z
+      .enum([
+        'development',
+        'test',
+        'production',
+      ])
+      .default(
+        'development'
+      ),
 
-  PORT: z.coerce
-    .number()
-    .default(5000),
-
-  CLIENT_ORIGIN: z
-    .string()
-    .url()
-    .default(
-      'http://localhost:5173'
-    ),
-
-  FRONTEND_URL: z
-    .string()
-    .url()
-    .default(
-      'http://localhost:5173'
-    ),
-
-  DB_HOST: z
-    .string()
-    .min(1),
-
-  DB_PORT: z.coerce
-    .number()
-    .default(3306),
-
-  DB_NAME: z
-    .string()
-    .min(1),
-
-  DB_USER: z
-    .string()
-    .min(1),
-
-  DB_PASSWORD: z
-    .string()
-    .default(''),
-
-  DB_SSL: z
-    .enum([
-      'true',
-      'false',
-    ])
-    .default('false'),
-
-  JWT_ACCESS_SECRET: z
-    .string()
-    .min(32),
-
-  JWT_ACCESS_EXPIRES_IN: z
-    .string()
-    .default('15m'),
-
-  JWT_REFRESH_SECRET: z
-    .string()
-    .min(32),
-
-  JWT_REFRESH_EXPIRES_IN: z
-    .string()
-    .default('7d'),
-
-  REFRESH_COOKIE_NAME: z
-    .string()
-    .default(
-      'lms_refresh_token'
-    ),
-
-  AUTH_RATE_LIMIT_WINDOW_MS:
-    z.coerce
+    PORT: z.coerce
       .number()
-      .default(900000),
+      .default(5000),
 
-  AUTH_RATE_LIMIT_MAX:
-    z.coerce
+    CLIENT_ORIGIN: z
+      .string()
+      .url()
+      .default(
+        'http://localhost:5173'
+      ),
+
+    FRONTEND_URL: z
+      .string()
+      .url()
+      .default(
+        'http://localhost:5173'
+      ),
+
+    DB_HOST: z
+      .string()
+      .min(1),
+
+    DB_PORT: z.coerce
       .number()
-      .default(20),
+      .default(3306),
 
-  RAZORPAY_KEY_ID: z
-    .string()
-    .optional(),
+    DB_NAME: z
+      .string()
+      .min(1),
 
-  RAZORPAY_KEY_SECRET: z
-    .string()
-    .optional(),
+    DB_USER: z
+      .string()
+      .min(1),
 
-  BREVO_API_KEY: z
-    .string()
-    .optional(),
+    DB_PASSWORD: z
+      .string()
+      .default(''),
 
-  BREVO_FROM_EMAIL: z
-    .string()
-    .email()
-    .optional(),
+    DB_SSL: z
+      .enum([
+        'true',
+        'false',
+      ])
+      .default('false'),
 
-  BREVO_FROM_NAME: z
-    .string()
-    .default(
-      'Athenaeum Library'
-    ),
+    JWT_ACCESS_SECRET: z
+      .string()
+      .min(32),
 
-  REDIS_HOST: z
-    .string()
-    .default('localhost'),
+    JWT_ACCESS_EXPIRES_IN: z
+      .string()
+      .default('15m'),
 
-  REDIS_PORT: z.coerce
-    .number()
-    .default(6379),
+    JWT_REFRESH_SECRET: z
+      .string()
+      .min(32),
 
-  REDIS_USERNAME: z
-    .string()
-    .optional(),
+    JWT_REFRESH_EXPIRES_IN: z
+      .string()
+      .default('7d'),
 
-  REDIS_PASSWORD: z
-    .string()
-    .optional(),
+    REFRESH_COOKIE_NAME: z
+      .string()
+      .default(
+        'lms_refresh_token'
+      ),
 
-  REDIS_TLS: z
-    .enum([
-      'true',
-      'false',
-    ])
-    .default('false'),
-});
+    AUTH_RATE_LIMIT_WINDOW_MS:
+      z.coerce
+        .number()
+        .default(
+          900000
+        ),
+
+    AUTH_RATE_LIMIT_MAX:
+      z.coerce
+        .number()
+        .default(20),
+
+    RAZORPAY_KEY_ID: z
+      .string()
+      .optional(),
+
+    RAZORPAY_KEY_SECRET: z
+      .string()
+      .optional(),
+
+    BREVO_API_KEY: z
+      .string()
+      .optional(),
+
+    BREVO_FROM_EMAIL: z
+      .string()
+      .email()
+      .optional(),
+
+    BREVO_FROM_NAME: z
+      .string()
+      .default(
+        'Athenaeum Library'
+      ),
+
+    REDIS_HOST: z
+      .string()
+      .default(
+        'localhost'
+      ),
+
+    REDIS_PORT: z.coerce
+      .number()
+      .default(6379),
+
+    REDIS_USERNAME: z
+      .string()
+      .optional(),
+
+    REDIS_PASSWORD: z
+      .string()
+      .optional(),
+
+    REDIS_TLS: z
+      .enum([
+        'true',
+        'false',
+      ])
+      .default('false'),
+  })
+  .superRefine(
+    (
+      data,
+      ctx
+    ) => {
+      if (
+        data.JWT_ACCESS_SECRET ===
+        data.JWT_REFRESH_SECRET
+      ) {
+        ctx.addIssue({
+          code:
+            z.ZodIssueCode.custom,
+
+          path: [
+            'JWT_REFRESH_SECRET',
+          ],
+
+          message:
+            'JWT access and refresh secrets must be different',
+        });
+      }
+    }
+  );
 
 const parsed =
   envSchema.safeParse(
