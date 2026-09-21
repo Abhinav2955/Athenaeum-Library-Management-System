@@ -38,6 +38,32 @@ const {
 const DUE_SOON_WINDOW_HOURS =
   48;
 
+const escapeHtml =
+  (value) =>
+    String(
+      value ?? ''
+    )
+      .replace(
+        /&/g,
+        '&amp;'
+      )
+      .replace(
+        /</g,
+        '&lt;'
+      )
+      .replace(
+        />/g,
+        '&gt;'
+      )
+      .replace(
+        /"/g,
+        '&quot;'
+      )
+      .replace(
+        /'/g,
+        '&#39;'
+      );
+
 const safelyQueueEmail =
   async (payload) => {
     try {
@@ -72,16 +98,28 @@ const buildReminderEmail =
     message,
   }) => {
     const safeName =
-      memberName ||
-      'Library Member';
+      escapeHtml(
+        memberName ||
+          'Library Member'
+      );
+
+    const safeHeading =
+      escapeHtml(
+        heading
+      );
+
+    const safeMessage =
+      escapeHtml(
+        message
+      );
 
     return `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
-        <h2>${heading}</h2>
+        <h2>${safeHeading}</h2>
 
         <p>Hello ${safeName},</p>
 
-        <p>${message}</p>
+        <p>${safeMessage}</p>
 
         <p>
           Please sign in to Athenaeum Library to review your current loans.
@@ -253,7 +291,8 @@ const flagOverdueLoans =
             record.id,
         });
 
-      notificationCount += 1;
+      notificationCount +=
+        1;
 
       if (
         record.borrower
@@ -428,7 +467,8 @@ const notifyDueSoon =
             record.id,
         });
 
-      notifiedCount += 1;
+      notifiedCount +=
+        1;
 
       if (
         record.borrower
@@ -462,7 +502,8 @@ const notifyDueSoon =
     }
 
     if (
-      notifiedCount > 0
+      notifiedCount >
+      0
     ) {
       logger.info(
         `⏰ Sent ${notifiedCount} due-soon reminder(s)`
@@ -478,7 +519,10 @@ const expireReservationHolds =
       await reservationService
         .expireStaleHolds();
 
-    if (count > 0) {
+    if (
+      count >
+      0
+    ) {
       logger.info(
         `⏰ Expired ${count} stale reservation hold(s)`
       );
