@@ -369,48 +369,104 @@ const verifyEmail =
         rawToken
       );
 
-    const user =
-      await User.findOne({
-        where: {
-          emailVerificationTokenHash:
-            tokenHash,
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findOne({
+              where: {
+                emailVerificationTokenHash:
+                  tokenHash,
+              },
 
-          emailVerificationExpires: {
-            [Op.gt]:
-              new Date(),
-          },
-        },
-      });
+              transaction,
 
-    if (!user) {
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
+
+          if (!user) {
+            return {
+              invalidToken:
+                true,
+            };
+          }
+
+          if (
+            !user.emailVerificationExpires ||
+            user.emailVerificationExpires <=
+              new Date()
+          ) {
+            return {
+              invalidToken:
+                true,
+            };
+          }
+
+          if (
+            user.isEmailVerified
+          ) {
+            return {
+              invalidToken:
+                true,
+            };
+          }
+
+          user.isEmailVerified =
+            true;
+
+          user.emailVerificationTokenHash =
+            null;
+
+          user.emailVerificationExpires =
+            null;
+
+          await user.save({
+            transaction,
+          });
+
+          const tokens =
+            await issueTokenPair(
+              user,
+              meta,
+              transaction
+            );
+
+          return {
+            invalidToken:
+              false,
+
+            user,
+
+            accessToken:
+              tokens.accessToken,
+
+            refreshToken:
+              tokens.refreshToken,
+          };
+        }
+      );
+
+    if (
+      result.invalidToken
+    ) {
       throw ApiError.badRequest(
         'This verification link is invalid or has expired'
       );
     }
 
-    user.isEmailVerified =
-      true;
-
-    user.emailVerificationTokenHash =
-      null;
-
-    user.emailVerificationExpires =
-      null;
-
-    await user.save();
-
-    const tokens =
-      await issueTokenPair(
-        user,
-        meta
-      );
-
     return {
-      user,
+      user:
+        result.user,
+
       accessToken:
-        tokens.accessToken,
+        result.accessToken,
+
       refreshToken:
-        tokens.refreshToken,
+        result.refreshToken,
     };
   };
 
