@@ -88,61 +88,94 @@ const createReservation = async (
   userId,
   bookId
 ) => {
-  const book =
-    await Book.findByPk(
-      bookId
-    );
+  return sequelize.transaction(
+    async (t) => {
+      const member =
+        await User.findByPk(
+          userId,
+          {
+            transaction: t,
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
 
-  if (!book) {
-    throw ApiError.notFound(
-      'Book not found'
-    );
-  }
+      if (!member) {
+        throw ApiError.notFound(
+          'Member not found'
+        );
+      }
 
-  if (
-    book.availableCopies > 0
-  ) {
-    throw ApiError.badRequest(
-      'This book is currently available and does not need a reservation'
-    );
-  }
+      const book =
+        await Book.findByPk(
+          bookId,
+          {
+            transaction: t,
+          }
+        );
 
-  const existing =
-    await Reservation.findOne({
-      where: {
+      if (!book) {
+        throw ApiError.notFound(
+          'Book not found'
+        );
+      }
+
+      if (
+        book.availableCopies > 0
+      ) {
+        throw ApiError.badRequest(
+          'This book is currently available and does not need a reservation'
+        );
+      }
+
+      const existing =
+        await Reservation.findOne({
+          where: {
+            userId,
+            bookId,
+
+            status: {
+              [Op.in]: [
+                'waiting',
+                'ready',
+              ],
+            },
+          },
+
+          transaction: t,
+        });
+
+      if (existing) {
+        throw ApiError.conflict(
+          'You already have an active reservation for this book'
+        );
+      }
+
+      const reservation =
+        await Reservation.create(
+          {
+            userId,
+            bookId,
+
+            requestedAt:
+              new Date(),
+
+            status:
+              'waiting',
+          },
+          {
+            transaction: t,
+          }
+        );
+
+      emitReservationChange(
         userId,
-        bookId,
+        t
+      );
 
-        status: {
-          [Op.in]: [
-            'waiting',
-            'ready',
-          ],
-        },
-      },
-    });
-
-  if (existing) {
-    throw ApiError.conflict(
-      'You already have an active reservation for this book'
-    );
-  }
-
-  const reservation =
-    await Reservation.create({
-      userId,
-      bookId,
-      requestedAt:
-        new Date(),
-      status:
-        'waiting',
-    });
-
-  emitReservationChange(
-    userId
+      return reservation;
+    }
   );
-
-  return reservation;
 };
 
 const tryFulfillNextReservation =

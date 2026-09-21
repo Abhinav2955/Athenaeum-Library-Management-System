@@ -1,3 +1,5 @@
+const { Op } = require('sequelize');
+
 const request = require('supertest');
 
 const app = require('../../src/app');
@@ -9,6 +11,7 @@ const {
 const {
   User,
   Notification,
+  Reservation,
 } = require(
   '../../src/database/models'
 );
@@ -23,31 +26,33 @@ let m2Id;
 
 let bookId;
 
+const stamp = Date.now();
+
 const admin = {
   name: 'AdminR',
   email:
-    `adminr.${Date.now()}@example.com`,
+    `adminr.${stamp}@example.com`,
   password: 'StrongPass1',
 };
 
 const m1 = {
   name: 'R1',
   email:
-    `r1.${Date.now()}@example.com`,
+    `r1.${stamp}@example.com`,
   password: 'StrongPass1',
 };
 
 const m2 = {
   name: 'R2',
   email:
-    `r2.${Date.now()}@example.com`,
+    `r2.${stamp}@example.com`,
   password: 'StrongPass1',
 };
 
 const m3 = {
   name: 'R3',
   email:
-    `r3.${Date.now()}@example.com`,
+    `r3.${stamp}@example.com`,
   password: 'StrongPass1',
 };
 
@@ -64,6 +69,70 @@ const registerAndLogin =
 
     return res.body.data
       .accessToken;
+  };
+
+const createUnavailableBook =
+  async (
+    isbn,
+    title,
+    borrowerToken
+  ) => {
+    const bookRes =
+      await request(app)
+        .post('/api/v1/books')
+        .set(
+          'Authorization',
+          `Bearer ${adminToken}`
+        )
+        .send({
+          isbn,
+          title,
+          totalCopies: 0,
+        });
+
+    expect(
+      bookRes.statusCode
+    ).toBe(201);
+
+    const id =
+      bookRes.body.data.id;
+
+    const copiesRes =
+      await request(app)
+        .post(
+          '/api/v1/borrow/copies'
+        )
+        .set(
+          'Authorization',
+          `Bearer ${adminToken}`
+        )
+        .send({
+          bookId: id,
+          quantity: 1,
+        });
+
+    expect(
+      copiesRes.statusCode
+    ).toBe(201);
+
+    const checkoutRes =
+      await request(app)
+        .post(
+          '/api/v1/borrow/checkout'
+        )
+        .set(
+          'Authorization',
+          `Bearer ${borrowerToken}`
+        )
+        .send({
+          bookId: id,
+        });
+
+    expect(
+      checkoutRes.statusCode
+    ).toBe(201);
+
+    return id;
   };
 
 beforeAll(async () => {
@@ -274,6 +343,141 @@ describe(
         expect(
           res.statusCode
         ).toBe(409);
+      }
+    );
+
+    it(
+      'prevents simultaneous duplicate reservations from the same member',
+      async () => {
+        const borrowerCredentials = {
+          name:
+            'Reservation Lock Borrower',
+
+          email:
+            `reservation.lock.borrower.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const reserverCredentials = {
+          name:
+            'Reservation Lock Member',
+
+          email:
+            `reservation.lock.member.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const borrowerToken =
+          await registerAndLogin(
+            borrowerCredentials
+          );
+
+        const reserverToken =
+          await registerAndLogin(
+            reserverCredentials
+          );
+
+        const reserver =
+          await User.findOne({
+            where: {
+              email:
+                reserverCredentials.email,
+            },
+          });
+
+        expect(
+          reserver
+        ).not.toBeNull();
+
+        const concurrentBookId =
+          await createUnavailableBook(
+            '9782222222239',
+            'Concurrent Reservation Test',
+            borrowerToken
+          );
+
+        const responses =
+          await Promise.all([
+            request(app)
+              .post(
+                '/api/v1/reservations'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${reserverToken}`
+              )
+              .send({
+                bookId:
+                  concurrentBookId,
+              }),
+
+            request(app)
+              .post(
+                '/api/v1/reservations'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${reserverToken}`
+              )
+              .send({
+                bookId:
+                  concurrentBookId,
+              }),
+          ]);
+
+        const statusCodes =
+          responses
+            .map(
+              (response) =>
+                response.statusCode
+            )
+            .sort();
+
+        expect(
+          statusCodes
+        ).toEqual([
+          201,
+          409,
+        ]);
+
+        const rejected =
+          responses.find(
+            (response) =>
+              response.statusCode ===
+              409
+          );
+
+        expect(
+          rejected.body.message
+        ).toMatch(
+          /already.*active reservation/i
+        );
+
+        const activeReservations =
+          await Reservation.count({
+            where: {
+              userId:
+                reserver.id,
+
+              bookId:
+                concurrentBookId,
+
+              status: {
+                [Op.in]: [
+                  'waiting',
+                  'ready',
+                ],
+              },
+            },
+          });
+
+        expect(
+          activeReservations
+        ).toBe(1);
       }
     );
 
