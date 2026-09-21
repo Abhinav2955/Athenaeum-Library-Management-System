@@ -34,6 +34,11 @@ const {
 } =
   require('./jobs/workers/email.worker');
 
+const {
+  emailQueue,
+} =
+  require('./jobs/queues/email.queue');
+
 const redis =
   require('./config/redis');
 
@@ -171,6 +176,10 @@ const shutdown =
 
       if (emailWorker) {
         await emailWorker.close();
+      }
+
+      if (emailQueue) {
+        await emailQueue.close();
       }
 
       if (
