@@ -1,6 +1,8 @@
-const request = require('supertest');
+const request =
+  require('supertest');
 
-const app = require('../../src/app');
+const app =
+  require('../../src/app');
 
 const {
   sequelize,
@@ -18,129 +20,158 @@ let adminToken;
 let memberToken;
 let memberUser;
 
-const stamp = Date.now();
+const stamp =
+  Date.now();
 
 const admin = {
-  name: 'Scheduler Admin',
-  email: `scheduler.admin.${stamp}@example.com`,
-  password: 'StrongPass1',
+  name:
+    'Scheduler Admin',
+
+  email:
+    `scheduler.admin.${stamp}@example.com`,
+
+  password:
+    'StrongPass1',
 };
 
 const member = {
-  name: 'Scheduler Member',
-  email: `scheduler.member.${stamp}@example.com`,
-  password: 'StrongPass1',
+  name:
+    'Scheduler Member',
+
+  email:
+    `scheduler.member.${stamp}@example.com`,
+
+  password:
+    'StrongPass1',
 };
 
-const registerAndLogin = async (credentials) => {
-  await request(app)
-    .post('/api/v1/auth/register')
-    .send(credentials);
-
-  const response = await request(app)
-    .post('/api/v1/auth/login')
-    .send(credentials);
-
-  expect(response.statusCode).toBe(200);
-
-  return response.body.data.accessToken;
-};
-
-const createBookWithCopy = async (
-  isbn,
-  title
-) => {
-  
-  const bookResponse =
+const registerAndLogin =
+  async (credentials) => {
     await request(app)
-      .post('/api/v1/books')
-      .set(
-        'Authorization',
-        `Bearer ${adminToken}`
+      .post(
+        '/api/v1/auth/register'
       )
-      .send({
-        isbn,
-        title,
-      });
+      .send(
+        credentials
+      );
 
-  expect(
-    bookResponse.statusCode
-  ).toBe(201);
+    const response =
+      await request(app)
+        .post(
+          '/api/v1/auth/login'
+        )
+        .send(
+          credentials
+        );
 
-  const bookId =
-    bookResponse.body.data.id;
+    expect(
+      response.statusCode
+    ).toBe(200);
 
-  expect(
-    bookId
-  ).toBeDefined();
+    return response.body
+      .data.accessToken;
+  };
 
-  const copyResponse =
-    await request(app)
-      .post('/api/v1/borrow/copies')
-      .set(
-        'Authorization',
-        `Bearer ${adminToken}`
-      )
-      .send({
-        bookId,
-        quantity: 1,
-        shelfLocation: 'TEST-SHELF',
-      });
+const createBookWithCopy =
+  async (
+    isbn,
+    title
+  ) => {
+    const bookResponse =
+      await request(app)
+        .post(
+          '/api/v1/books'
+        )
+        .set(
+          'Authorization',
+          `Bearer ${adminToken}`
+        )
+        .send({
+          isbn,
+          title,
+        });
 
-  expect(
-    copyResponse.statusCode
-  ).toBe(201);
+    expect(
+      bookResponse.statusCode
+    ).toBe(201);
 
-  return bookId;
-};
+    const bookId =
+      bookResponse.body
+        .data.id;
 
-beforeAll(async () => {
-  await sequelize.sync({
-    force: true,
-  });
+    expect(
+      bookId
+    ).toBeDefined();
 
-  
-  memberToken =
-    await registerAndLogin(
-      member
-    );
+    const copyResponse =
+      await request(app)
+        .post(
+          '/api/v1/borrow/copies'
+        )
+        .set(
+          'Authorization',
+          `Bearer ${adminToken}`
+        )
+        .send({
+          bookId,
+          quantity: 1,
+          shelfLocation:
+            'TEST-SHELF',
+        });
 
-  memberUser =
-    await User.findOne({
-      where: {
-        email: member.email,
-      },
+    expect(
+      copyResponse.statusCode
+    ).toBe(201);
+
+    return bookId;
+  };
+
+beforeAll(
+  async () => {
+    await sequelize.sync({
+      force: true,
     });
 
-  expect(
-    memberUser
-  ).not.toBeNull();
+    memberToken =
+      await registerAndLogin(
+        member
+      );
 
-  
-  await registerAndLogin(
-    admin
-  );
+    memberUser =
+      await User.findOne({
+        where: {
+          email:
+            member.email,
+        },
+      });
 
-  
-  await User.update(
-    {
-      role: 'admin',
-    },
-    {
-      where: {
-        email: admin.email,
-      },
-    }
-  );
+    expect(
+      memberUser
+    ).not.toBeNull();
 
-  
-  adminToken =
     await registerAndLogin(
       admin
     );
-});
 
+    await User.update(
+      {
+        role:
+          'admin',
+      },
+      {
+        where: {
+          email:
+            admin.email,
+        },
+      }
+    );
 
+    adminToken =
+      await registerAndLogin(
+        admin
+      );
+  }
+);
 
 describe(
   'Part 9 - scheduled circulation maintenance',
@@ -175,16 +206,17 @@ describe(
         ).toBe(201);
 
         dueSoonRecordId =
-          checkout.body.data.id;
+          checkout.body
+            .data.id;
 
         expect(
           dueSoonRecordId
         ).toBeDefined();
 
-       
         await BorrowRecord.update(
           {
-            status: 'active',
+            status:
+              'active',
 
             dueAt:
               new Date(
@@ -234,7 +266,6 @@ describe(
     it(
       'does not create duplicate due-soon notifications during the same due window',
       async () => {
-        
         const before =
           await Notification.count({
             where: {
@@ -253,7 +284,6 @@ describe(
           before
         ).toBe(1);
 
-        
         await notifyDueSoon();
 
         await notifyDueSoon();
@@ -272,10 +302,11 @@ describe(
             },
           });
 
-        
         expect(
           after
-        ).toBe(before);
+        ).toBe(
+          before
+        );
       }
     );
 
@@ -306,13 +337,13 @@ describe(
         ).toBe(201);
 
         overdueRecordId =
-          checkout.body.data.id;
+          checkout.body
+            .data.id;
 
         expect(
           overdueRecordId
         ).toBeDefined();
 
-        
         await BorrowRecord.update(
           {
             status:
@@ -334,7 +365,14 @@ describe(
           }
         );
 
-        await flagOverdueLoans();
+        const transitioned =
+          await flagOverdueLoans();
+
+        expect(
+          transitioned
+        ).toBeGreaterThanOrEqual(
+          1
+        );
 
         const record =
           await BorrowRecord.findByPk(
@@ -347,7 +385,9 @@ describe(
 
         expect(
           record.status
-        ).toBe('overdue');
+        ).toBe(
+          'overdue'
+        );
 
         const notification =
           await Notification.findOne({
@@ -396,7 +436,6 @@ describe(
           before
         ).toBe(1);
 
-        
         await flagOverdueLoans();
 
         await flagOverdueLoans();
@@ -417,14 +456,152 @@ describe(
 
         expect(
           after
-        ).toBe(before);
+        ).toBe(
+          before
+        );
+      }
+    );
+
+    it(
+      'never changes a returned past-due loan back to overdue',
+      async () => {
+        const returnedMember = {
+          name:
+            'Returned Scheduler Member',
+
+          email:
+            `scheduler.returned.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const returnedToken =
+          await registerAndLogin(
+            returnedMember
+          );
+
+        const returnedUser =
+          await User.findOne({
+            where: {
+              email:
+                returnedMember.email,
+            },
+          });
+
+        expect(
+          returnedUser
+        ).not.toBeNull();
+
+        const bookId =
+          await createBookWithCopy(
+            '9785000000004',
+            'Returned Overdue Scheduler Test'
+          );
+
+        const checkout =
+          await request(app)
+            .post(
+              '/api/v1/borrow/checkout'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${returnedToken}`
+            )
+            .send({
+              bookId,
+            });
+
+        expect(
+          checkout.statusCode
+        ).toBe(201);
+
+        const recordId =
+          checkout.body
+            .data.id;
+
+        await BorrowRecord.update(
+          {
+            status:
+              'active',
+
+            dueAt:
+              new Date(
+                Date.now() -
+                  60 *
+                    60 *
+                    1000
+              ),
+          },
+          {
+            where: {
+              id:
+                recordId,
+            },
+          }
+        );
+
+        const returnResponse =
+          await request(app)
+            .post(
+              `/api/v1/borrow/${recordId}/return`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            );
+
+        expect(
+          returnResponse.statusCode
+        ).toBe(200);
+
+        const beforeSweep =
+          await BorrowRecord.findByPk(
+            recordId
+          );
+
+        expect(
+          beforeSweep.status
+        ).toBe(
+          'returned'
+        );
+
+        await flagOverdueLoans();
+
+        const afterSweep =
+          await BorrowRecord.findByPk(
+            recordId
+          );
+
+        expect(
+          afterSweep.status
+        ).toBe(
+          'returned'
+        );
+
+        const overdueNotification =
+          await Notification.findOne({
+            where: {
+              userId:
+                returnedUser.id,
+
+              borrowRecordId:
+                recordId,
+
+              type:
+                'overdue',
+            },
+          });
+
+        expect(
+          overdueNotification
+        ).toBeNull();
       }
     );
 
     it(
       'does not send a due-soon notification for a loan more than 48 hours away',
       async () => {
-        
         const futureMember = {
           name:
             'Future Scheduler Member',
@@ -477,13 +654,13 @@ describe(
         ).toBe(201);
 
         const recordId =
-          checkout.body.data.id;
+          checkout.body
+            .data.id;
 
         expect(
           recordId
         ).toBeDefined();
 
-        
         await BorrowRecord.update(
           {
             status:

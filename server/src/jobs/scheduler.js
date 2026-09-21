@@ -13,6 +13,7 @@ const {
   BookCopy,
   Book,
   User,
+  sequelize,
 } = require('../database/models');
 
 const reservationService =
@@ -137,7 +138,7 @@ const flagOverdueLoans =
     const now =
       new Date();
 
-    const newlyOverdue =
+    const candidates =
       await BorrowRecord.findAll({
         where: {
           status:
@@ -149,98 +150,159 @@ const flagOverdueLoans =
           },
         },
 
-        include: [
-          {
-            model:
-              BookCopy,
-
-            as:
-              'copy',
-
-            include: [
-              {
-                model:
-                  Book,
-
-                as:
-                  'book',
-
-                attributes: [
-                  'title',
-                ],
-              },
-            ],
-          },
-
-          {
-            model:
-              User,
-
-            as:
-              'borrower',
-
-            attributes: [
-              'id',
-              'name',
-              'email',
-            ],
-          },
+        attributes: [
+          'id',
         ],
       });
 
     if (
-      newlyOverdue.length ===
+      candidates.length ===
       0
     ) {
       return 0;
     }
 
-    await BorrowRecord.update(
-      {
-        status:
-          'overdue',
-      },
-
-      {
-        where: {
-          id:
-            newlyOverdue.map(
-              (record) =>
-                record.id
-            ),
-        },
-      }
-    );
-
-    const affectedUserIds =
-      [
-        ...new Set(
-          newlyOverdue.map(
-            (record) =>
-              record.userId
-          )
-        ),
-      ];
+    const newlyOverdue = [];
 
     for (
-      const userId of
-      affectedUserIds
+      const candidate of
+      candidates
     ) {
-      emitDataChanged({
-        resources: [
-          'loans',
-        ],
-        userId,
-      });
-    }
+      const transitioned =
+        await sequelize.transaction(
+          async (t) => {
+            const record =
+              await BorrowRecord.findByPk(
+                candidate.id,
+                {
+                  include: [
+                    {
+                      model:
+                        BookCopy,
 
-    emitDataChanged({
-      resources: [
-        'loans',
-        'reports',
-      ],
-      staff: true,
-    });
+                      as:
+                        'copy',
+
+                      include: [
+                        {
+                          model:
+                            Book,
+
+                          as:
+                            'book',
+
+                          attributes: [
+                            'title',
+                          ],
+                        },
+                      ],
+                    },
+
+                    {
+                      model:
+                        User,
+
+                      as:
+                        'borrower',
+
+                      attributes: [
+                        'id',
+                        'name',
+                        'email',
+                      ],
+                    },
+                  ],
+
+                  transaction:
+                    t,
+
+                  lock:
+                    t.LOCK.UPDATE,
+                }
+              );
+
+            if (!record) {
+              return null;
+            }
+
+            if (
+              record.status !==
+              'active'
+            ) {
+              return null;
+            }
+
+            if (
+              !record.dueAt ||
+              record.dueAt >=
+                new Date()
+            ) {
+              return null;
+            }
+
+            record.status =
+              'overdue';
+
+            await record.save({
+              transaction:
+                t,
+            });
+
+            emitDataChanged(
+              {
+                resources: [
+                  'loans',
+                ],
+                userId:
+                  record.userId,
+              },
+              t
+            );
+
+            emitDataChanged(
+              {
+                resources: [
+                  'loans',
+                  'reports',
+                ],
+                staff:
+                  true,
+              },
+              t
+            );
+
+            return {
+              id:
+                record.id,
+
+              userId:
+                record.userId,
+
+              title:
+                record.copy
+                  ?.book
+                  ?.title ||
+                'A library book',
+
+              borrowerName:
+                record.borrower
+                  ?.name ||
+                null,
+
+              borrowerEmail:
+                record.borrower
+                  ?.email ||
+                null,
+            };
+          }
+        );
+
+      if (transitioned) {
+        newlyOverdue.push(
+          transitioned
+        );
+      }
+    }
 
     let notificationCount =
       0;
@@ -268,14 +330,8 @@ const flagOverdueLoans =
         continue;
       }
 
-      const title =
-        record.copy
-          ?.book
-          ?.title ||
-        'A library book';
-
       const message =
-        `"${title}" is overdue. Please return it as soon as possible.`;
+        `"${record.title}" is overdue. Please return it as soon as possible.`;
 
       await notificationService
         .createNotification({
@@ -295,39 +351,40 @@ const flagOverdueLoans =
         1;
 
       if (
-        record.borrower
-          ?.email
+        record.borrowerEmail
       ) {
         await safelyQueueEmail({
           to:
-            record.borrower
-              .email,
+            record.borrowerEmail,
 
           subject:
-            `Overdue book: ${title}`,
+            `Overdue book: ${record.title}`,
 
           html:
             buildReminderEmail(
               {
                 memberName:
-                  record
-                    .borrower
-                    .name,
+                  record.borrowerName,
 
                 heading:
                   'Book overdue',
 
                 message:
-                  `"${title}" is now overdue. Please return it to the library as soon as possible.`,
+                  `"${record.title}" is now overdue. Please return it to the library as soon as possible.`,
               }
             ),
         });
       }
     }
 
-    logger.info(
-      `⏰ Flagged ${newlyOverdue.length} loan(s) as overdue; created ${notificationCount} overdue reminder(s)`
-    );
+    if (
+      newlyOverdue.length >
+      0
+    ) {
+      logger.info(
+        `⏰ Flagged ${newlyOverdue.length} loan(s) as overdue; created ${notificationCount} overdue reminder(s)`
+      );
+    }
 
     return newlyOverdue.length;
   };
