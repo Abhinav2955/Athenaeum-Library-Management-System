@@ -82,7 +82,9 @@ const msFromExpiry =
 
     const multiplier = {
       s: 1000,
-      m: 60 * 1000,
+      m:
+        60 *
+        1000,
       h:
         60 *
         60 *
@@ -200,6 +202,31 @@ const issueTokenPair =
       refreshToken,
       storedRefreshToken,
     };
+  };
+
+const revokeActiveRefreshTokens =
+  async (
+    userId,
+    transaction
+  ) => {
+    await RefreshToken.update(
+      {
+        revokedAt:
+          new Date(),
+      },
+      {
+        where: {
+          userId,
+
+          revokedAt: {
+            [Op.is]:
+              null,
+          },
+        },
+
+        transaction,
+      }
+    );
   };
 
 const sendVerificationEmail =
@@ -490,165 +517,153 @@ const login =
         .trim()
         .toLowerCase();
 
-    return sequelize.transaction(
-      async (
-        transaction
-      ) => {
-        const user =
-          await User.findOne({
-            where: {
-              email:
-                normalizedEmail,
-            },
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findOne({
+              where: {
+                email:
+                  normalizedEmail,
+              },
 
-            transaction,
+              transaction,
 
-            lock:
-              transaction
-                .LOCK.UPDATE,
-          });
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
 
-        if (!user) {
-          throw ApiError.unauthorized(
-            'Invalid email or password'
-          );
-        }
-
-        if (
-          user.lockedUntil &&
-          user.lockedUntil >
-            new Date()
-        ) {
-          const minutesLeft =
-            Math.ceil(
-              (
-                user.lockedUntil -
-                new Date()
-              ) /
-                60000
+          if (!user) {
+            throw ApiError.unauthorized(
+              'Invalid email or password'
             );
-
-          throw ApiError.forbidden(
-            `Account temporarily locked. Try again in ${minutesLeft} minute(s)`
-          );
-        }
-
-        const isMatch =
-          await bcrypt.compare(
-            password,
-            user.passwordHash
-          );
-
-        if (!isMatch) {
-          user.failedLoginAttempts +=
-            1;
-
-          if (
-            user.failedLoginAttempts >=
-            MAX_FAILED_ATTEMPTS
-          ) {
-            user.lockedUntil =
-              new Date(
-                Date.now() +
-                  LOCK_DURATION_MS
-              );
-
-            user.failedLoginAttempts =
-              0;
           }
-
-          await user.save({
-            transaction,
-          });
-
-          const result = {
-            invalidCredentials:
-              true,
-          };
 
           if (
             user.lockedUntil &&
             user.lockedUntil >
               new Date()
           ) {
-            result.locked =
-              true;
+            const minutesLeft =
+              Math.ceil(
+                (
+                  user.lockedUntil -
+                  new Date()
+                ) /
+                  60000
+              );
+
+            throw ApiError.forbidden(
+              `Account temporarily locked. Try again in ${minutesLeft} minute(s)`
+            );
           }
 
-          return result;
-        }
+          const isMatch =
+            await bcrypt.compare(
+              password,
+              user.passwordHash
+            );
 
-        if (
-          !user.isEmailVerified &&
-          env.NODE_ENV !==
-            'test'
-        ) {
-          throw ApiError.forbidden(
-            'Please verify your email before signing in'
-          );
-        }
+          if (!isMatch) {
+            user.failedLoginAttempts +=
+              1;
 
-        if (
-          user.membershipStatus ===
-          'suspended'
-        ) {
-          throw ApiError.forbidden(
-            'Your account has been suspended. Contact the library.'
-          );
-        }
+            if (
+              user.failedLoginAttempts >=
+              MAX_FAILED_ATTEMPTS
+            ) {
+              user.lockedUntil =
+                new Date(
+                  Date.now() +
+                    LOCK_DURATION_MS
+                );
 
-        user.failedLoginAttempts =
-          0;
+              user.failedLoginAttempts =
+                0;
+            }
 
-        user.lockedUntil =
-          null;
+            await user.save({
+              transaction,
+            });
 
-        await user.save({
-          transaction,
-        });
+            return {
+              invalidCredentials:
+                true,
+            };
+          }
 
-        const tokens =
-          await issueTokenPair(
+          if (
+            !user.isEmailVerified &&
+            env.NODE_ENV !==
+              'test'
+          ) {
+            throw ApiError.forbidden(
+              'Please verify your email before signing in'
+            );
+          }
+
+          if (
+            user.membershipStatus ===
+            'suspended'
+          ) {
+            throw ApiError.forbidden(
+              'Your account has been suspended. Contact the library.'
+            );
+          }
+
+          user.failedLoginAttempts =
+            0;
+
+          user.lockedUntil =
+            null;
+
+          await user.save({
+            transaction,
+          });
+
+          const tokens =
+            await issueTokenPair(
+              user,
+              meta,
+              transaction
+            );
+
+          return {
+            invalidCredentials:
+              false,
+
             user,
-            meta,
-            transaction
-          );
 
-        return {
-          invalidCredentials:
-            false,
+            accessToken:
+              tokens.accessToken,
 
-          user,
-
-          accessToken:
-            tokens.accessToken,
-
-          refreshToken:
-            tokens.refreshToken,
-        };
-      }
-    ).then(
-      (result) => {
-        if (
-          result.invalidCredentials
-        ) {
-          throw ApiError.unauthorized(
-            'Invalid email or password'
-          );
+            refreshToken:
+              tokens.refreshToken,
+          };
         }
+      );
 
-        return {
-          user:
-            result.user,
+    if (
+      result.invalidCredentials
+    ) {
+      throw ApiError.unauthorized(
+        'Invalid email or password'
+      );
+    }
 
-          accessToken:
-            result.accessToken,
+    return {
+      user:
+        result.user,
 
-          refreshToken:
-            result.refreshToken,
-        };
-      }
-    );
+      accessToken:
+        result.accessToken,
+
+      refreshToken:
+        result.refreshToken,
+    };
   };
 
 const refresh =
@@ -877,53 +892,77 @@ const changePassword =
     currentPassword,
     newPassword
   ) => {
-    const user =
-      await User.findByPk(
-        userId
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findByPk(
+              userId,
+              {
+                transaction,
+
+                lock:
+                  transaction
+                    .LOCK.UPDATE,
+              }
+            );
+
+          if (!user) {
+            throw ApiError.notFound(
+              'User not found'
+            );
+          }
+
+          const isMatch =
+            await bcrypt.compare(
+              currentPassword,
+              user.passwordHash
+            );
+
+          if (!isMatch) {
+            return {
+              incorrectPassword:
+                true,
+            };
+          }
+
+          user.passwordHash =
+            await bcrypt.hash(
+              newPassword,
+              SALT_ROUNDS
+            );
+
+          user.failedLoginAttempts =
+            0;
+
+          user.lockedUntil =
+            null;
+
+          await user.save({
+            transaction,
+          });
+
+          await revokeActiveRefreshTokens(
+            user.id,
+            transaction
+          );
+
+          return {
+            incorrectPassword:
+              false,
+          };
+        }
       );
 
-    if (!user) {
-      throw ApiError.notFound(
-        'User not found'
-      );
-    }
-
-    const isMatch =
-      await bcrypt.compare(
-        currentPassword,
-        user.passwordHash
-      );
-
-    if (!isMatch) {
+    if (
+      result.incorrectPassword
+    ) {
       throw ApiError.badRequest(
         'Current password is incorrect'
       );
     }
-
-    user.passwordHash =
-      await bcrypt.hash(
-        newPassword,
-        SALT_ROUNDS
-      );
-
-    await user.save();
-
-    await RefreshToken.update(
-      {
-        revokedAt:
-          new Date(),
-      },
-      {
-        where: {
-          userId,
-
-          revokedAt: {
-            [Op.is]:
-              null,
-          },
-        },
-      }
-    );
   };
 
 const forgotPassword =
@@ -1025,62 +1064,84 @@ const resetPassword =
         rawToken
       );
 
-    const user =
-      await User.findOne({
-        where: {
-          passwordResetTokenHash:
-            tokenHash,
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findOne({
+              where: {
+                passwordResetTokenHash:
+                  tokenHash,
+              },
 
-          passwordResetExpires: {
-            [Op.gt]:
-              new Date(),
-          },
-        },
-      });
+              transaction,
 
-    if (!user) {
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
+
+          if (!user) {
+            return {
+              invalidToken:
+                true,
+            };
+          }
+
+          if (
+            !user.passwordResetExpires ||
+            user.passwordResetExpires <=
+              new Date()
+          ) {
+            return {
+              invalidToken:
+                true,
+            };
+          }
+
+          user.passwordHash =
+            await bcrypt.hash(
+              newPassword,
+              SALT_ROUNDS
+            );
+
+          user.passwordResetTokenHash =
+            null;
+
+          user.passwordResetExpires =
+            null;
+
+          user.failedLoginAttempts =
+            0;
+
+          user.lockedUntil =
+            null;
+
+          await user.save({
+            transaction,
+          });
+
+          await revokeActiveRefreshTokens(
+            user.id,
+            transaction
+          );
+
+          return {
+            invalidToken:
+              false,
+          };
+        }
+      );
+
+    if (
+      result.invalidToken
+    ) {
       throw ApiError.badRequest(
         'This password reset link is invalid or has expired'
       );
     }
-
-    user.passwordHash =
-      await bcrypt.hash(
-        newPassword,
-        SALT_ROUNDS
-      );
-
-    user.passwordResetTokenHash =
-      null;
-
-    user.passwordResetExpires =
-      null;
-
-    user.failedLoginAttempts =
-      0;
-
-    user.lockedUntil =
-      null;
-
-    await user.save();
-
-    await RefreshToken.update(
-      {
-        revokedAt:
-          new Date(),
-      },
-      {
-        where: {
-          userId:
-            user.id,
-
-          revokedAt: {
-            [Op.is]:
-              null,
-          },
-        },
-      }
-    );
   };
 
 module.exports = {
