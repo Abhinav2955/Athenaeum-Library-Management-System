@@ -914,10 +914,27 @@ const renew = async (
       const bookId =
         record.copy.bookId;
 
+      const book =
+        await Book.findByPk(
+          bookId,
+          {
+            transaction: t,
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      if (!book) {
+        throw ApiError.notFound(
+          'Book not found'
+        );
+      }
+
       if (
         await reservationService
           .hasWaitingReservations(
-            bookId
+            bookId,
+            t
           )
       ) {
         throw ApiError.badRequest(

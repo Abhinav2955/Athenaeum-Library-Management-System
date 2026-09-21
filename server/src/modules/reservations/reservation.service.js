@@ -111,6 +111,8 @@ const createReservation = async (
           bookId,
           {
             transaction: t,
+            lock:
+              t.LOCK.UPDATE,
           }
         );
 
@@ -294,7 +296,10 @@ const tryFulfillNextReservation =
   };
 
 const hasWaitingReservations =
-  async (bookId) => {
+  async (
+    bookId,
+    transaction = null
+  ) => {
     const count =
       await Reservation.count({
         where: {
@@ -302,6 +307,8 @@ const hasWaitingReservations =
           status:
             'waiting',
         },
+
+        transaction,
       });
 
     return count > 0;

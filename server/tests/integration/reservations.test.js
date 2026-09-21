@@ -12,6 +12,7 @@ const {
   User,
   Notification,
   Reservation,
+  BorrowRecord,
 } = require(
   '../../src/database/models'
 );
@@ -478,6 +479,181 @@ describe(
         expect(
           activeReservations
         ).toBe(1);
+      }
+    );
+
+    it(
+      'serializes reservation creation against renewal for the same book',
+      async () => {
+        const borrowerCredentials = {
+          name:
+            'Reservation Renewal Race Borrower',
+
+          email:
+            `reservation.renew.race.borrower.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const reserverCredentials = {
+          name:
+            'Reservation Renewal Race Member',
+
+          email:
+            `reservation.renew.race.member.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const borrowerToken =
+          await registerAndLogin(
+            borrowerCredentials
+          );
+
+        const reserverToken =
+          await registerAndLogin(
+            reserverCredentials
+          );
+
+        const raceBookId =
+          await createUnavailableBook(
+            '9782222222246',
+            'Reservation Renewal Race Test',
+            borrowerToken
+          );
+
+        const loans =
+          await request(app)
+            .get(
+              '/api/v1/borrow/me'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${borrowerToken}`
+            );
+
+        expect(
+          loans.statusCode
+        ).toBe(200);
+
+        const record =
+          loans.body.data
+            .records.find(
+              (loan) =>
+                loan.copy.bookId ===
+                raceBookId
+            );
+
+        expect(
+          record
+        ).toBeDefined();
+
+        const reservationPromise =
+          request(app)
+            .post(
+              '/api/v1/reservations'
+            )
+            .set(
+              'Authorization',
+              `Bearer ${reserverToken}`
+            )
+            .send({
+              bookId:
+                raceBookId,
+            });
+
+        const renewalPromise =
+          request(app)
+            .post(
+              `/api/v1/borrow/${record.id}/renew`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${borrowerToken}`
+            );
+
+        const [
+          reservationResponse,
+          renewalResponse,
+        ] =
+          await Promise.all([
+            reservationPromise,
+            renewalPromise,
+          ]);
+
+        expect(
+          reservationResponse
+            .statusCode
+        ).toBe(201);
+
+        expect(
+          [
+            200,
+            400,
+          ]
+        ).toContain(
+          renewalResponse.statusCode
+        );
+
+        if (
+          renewalResponse.statusCode ===
+          400
+        ) {
+          expect(
+            renewalResponse.body
+              .message
+          ).toMatch(
+            /reservation/i
+          );
+        }
+
+        const reservations =
+          await Reservation.count({
+            where: {
+              bookId:
+                raceBookId,
+
+              status: {
+                [Op.in]: [
+                  'waiting',
+                  'ready',
+                ],
+              },
+            },
+          });
+
+        expect(
+          reservations
+        ).toBe(1);
+
+        const finalRecord =
+          await BorrowRecord.findByPk(
+            record.id
+          );
+
+        expect(
+          finalRecord
+        ).not.toBeNull();
+
+        if (
+          renewalResponse.statusCode ===
+          400
+        ) {
+          expect(
+            finalRecord.renewedCount
+          ).toBe(0);
+        }
+
+        if (
+          renewalResponse.statusCode ===
+          200
+        ) {
+          expect(
+            finalRecord.renewedCount
+          ).toBe(1);
+        }
       }
     );
 
