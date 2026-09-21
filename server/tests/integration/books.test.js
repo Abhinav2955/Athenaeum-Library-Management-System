@@ -1,10 +1,13 @@
-const request = require('supertest');
+const request =
+  require('supertest');
 
-const app = require('../../src/app');
+const app =
+  require('../../src/app');
 
 const {
   sequelize,
   User,
+  Book,
   BookCopy,
 } = require('../../src/database/models');
 
@@ -12,60 +15,88 @@ let adminToken;
 let memberToken;
 let createdBookId;
 
-const stamp = Date.now();
+const stamp =
+  Date.now();
 
 const admin = {
-  name: 'Books Admin',
-  email: `books.admin.${stamp}@example.com`,
-  password: 'StrongPass1',
+  name:
+    'Books Admin',
+
+  email:
+    `books.admin.${stamp}@example.com`,
+
+  password:
+    'StrongPass1',
 };
 
 const member = {
-  name: 'Books Member',
-  email: `books.member.${stamp}@example.com`,
-  password: 'StrongPass1',
+  name:
+    'Books Member',
+
+  email:
+    `books.member.${stamp}@example.com`,
+
+  password:
+    'StrongPass1',
 };
 
-const registerAndLogin = async (credentials) => {
-  await request(app)
-    .post('/api/v1/auth/register')
-    .send(credentials);
+const registerAndLogin =
+  async (credentials) => {
+    await request(app)
+      .post(
+        '/api/v1/auth/register'
+      )
+      .send(
+        credentials
+      );
 
-  const response = await request(app)
-    .post('/api/v1/auth/login')
-    .send(credentials);
+    const response =
+      await request(app)
+        .post(
+          '/api/v1/auth/login'
+        )
+        .send(
+          credentials
+        );
 
-  return response.body.data.accessToken;
-};
+    return response.body
+      .data.accessToken;
+  };
 
-beforeAll(async () => {
-  await sequelize.sync({
-    force: true,
-  });
+beforeAll(
+  async () => {
+    await sequelize.sync({
+      force: true,
+    });
 
-  
-  memberToken =
-    await registerAndLogin(member);
+    memberToken =
+      await registerAndLogin(
+        member
+      );
 
-  
-  await registerAndLogin(admin);
+    await registerAndLogin(
+      admin
+    );
 
-  
-  await User.update(
-    {
-      role: 'admin',
-    },
-    {
-      where: {
-        email: admin.email,
+    await User.update(
+      {
+        role:
+          'admin',
       },
-    }
-  );
+      {
+        where: {
+          email:
+            admin.email,
+        },
+      }
+    );
 
-  
-  adminToken =
-    await registerAndLogin(admin);
-});
+    adminToken =
+      await registerAndLogin(
+        admin
+      );
+  }
+);
 
 describe(
   'Books module',
@@ -75,7 +106,9 @@ describe(
       async () => {
         const res =
           await request(app)
-            .post('/api/v1/books')
+            .post(
+              '/api/v1/books'
+            )
             .send({
               isbn:
                 '9781111111111',
@@ -95,7 +128,9 @@ describe(
       async () => {
         const res =
           await request(app)
-            .post('/api/v1/books')
+            .post(
+              '/api/v1/books'
+            )
             .set(
               'Authorization',
               `Bearer ${memberToken}`
@@ -117,10 +152,11 @@ describe(
     it(
       'allows an admin to create a catalog book',
       async () => {
-        
         const res =
           await request(app)
-            .post('/api/v1/books')
+            .post(
+              '/api/v1/books'
+            )
             .set(
               'Authorization',
               `Bearer ${adminToken}`
@@ -150,11 +186,13 @@ describe(
         ).toBe(201);
 
         expect(
-          res.body.data.totalCopies
+          res.body.data
+            .totalCopies
         ).toBe(0);
 
         expect(
-          res.body.data.availableCopies
+          res.body.data
+            .availableCopies
         ).toBe(0);
 
         createdBookId =
@@ -164,7 +202,6 @@ describe(
           createdBookId
         ).toBeDefined();
 
-        
         const copyRes =
           await request(app)
             .post(
@@ -178,7 +215,8 @@ describe(
               bookId:
                 createdBookId,
 
-              quantity: 3,
+              quantity:
+                3,
 
               shelfLocation:
                 'A-01',
@@ -188,7 +226,6 @@ describe(
           copyRes.statusCode
         ).toBe(201);
 
-        
         const copyCount =
           await BookCopy.count({
             where: {
@@ -201,7 +238,6 @@ describe(
           copyCount
         ).toBe(3);
 
-        
         const getRes =
           await request(app)
             .get(
@@ -213,11 +249,13 @@ describe(
         ).toBe(200);
 
         expect(
-          getRes.body.data.totalCopies
+          getRes.body.data
+            .totalCopies
         ).toBe(3);
 
         expect(
-          getRes.body.data.availableCopies
+          getRes.body.data
+            .availableCopies
         ).toBe(3);
       }
     );
@@ -227,7 +265,9 @@ describe(
       async () => {
         const res =
           await request(app)
-            .post('/api/v1/books')
+            .post(
+              '/api/v1/books'
+            )
             .set(
               'Authorization',
               `Bearer ${adminToken}`
@@ -247,11 +287,101 @@ describe(
     );
 
     it(
+      'handles simultaneous creation of the same ISBN as a conflict',
+      async () => {
+        const isbn =
+          '9781111111199';
+
+        const [
+          first,
+          second,
+        ] =
+          await Promise.all([
+            request(app)
+              .post(
+                '/api/v1/books'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${adminToken}`
+              )
+              .send({
+                isbn,
+
+                title:
+                  'Concurrent ISBN Book A',
+              }),
+
+            request(app)
+              .post(
+                '/api/v1/books'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${adminToken}`
+              )
+              .send({
+                isbn,
+
+                title:
+                  'Concurrent ISBN Book B',
+              }),
+          ]);
+
+        const statuses = [
+          first.statusCode,
+          second.statusCode,
+        ].sort(
+          (a, b) =>
+            a - b
+        );
+
+        expect(
+          statuses
+        ).toEqual([
+          201,
+          409,
+        ]);
+
+        const persistedCount =
+          await Book.count({
+            where: {
+              isbn,
+            },
+          });
+
+        expect(
+          persistedCount
+        ).toBe(1);
+
+        const conflict =
+          first.statusCode ===
+          409
+            ? first
+            : second;
+
+        expect(
+          conflict.body
+            .success
+        ).toBe(false);
+
+        expect(
+          conflict.body
+            .message
+        ).toMatch(
+          /unique|already exists/i
+        );
+      }
+    );
+
+    it(
       'lists books',
       async () => {
         const res =
           await request(app)
-            .get('/api/v1/books');
+            .get(
+              '/api/v1/books'
+            );
 
         expect(
           res.statusCode
@@ -259,16 +389,18 @@ describe(
 
         expect(
           Array.isArray(
-            res.body.data.books
+            res.body.data
+              .books
           )
         ).toBe(true);
 
         expect(
-          res.body.data.books.some(
-            (book) =>
-              book.id ===
-              createdBookId
-          )
+          res.body.data
+            .books.some(
+              (book) =>
+                book.id ===
+                createdBookId
+            )
         ).toBe(true);
       }
     );
@@ -287,13 +419,15 @@ describe(
         ).toBe(200);
 
         expect(
-          res.body.data.books.length
+          res.body.data
+            .books.length
         ).toBeLessThanOrEqual(
           1
         );
 
         expect(
-          res.body.data.meta
+          res.body.data
+            .meta
         ).toBeDefined();
       }
     );
@@ -312,11 +446,12 @@ describe(
         ).toBe(200);
 
         expect(
-          res.body.data.books.some(
-            (book) =>
-              book.id ===
-              createdBookId
-          )
+          res.body.data
+            .books.some(
+              (book) =>
+                book.id ===
+                createdBookId
+            )
         ).toBe(true);
       }
     );
@@ -337,7 +472,6 @@ describe(
               title:
                 'Clean Architecture (2nd Edition)',
 
-              
               totalCopies:
                 999,
             });
@@ -347,18 +481,20 @@ describe(
         ).toBe(200);
 
         expect(
-          res.body.data.title
+          res.body.data
+            .title
         ).toBe(
           'Clean Architecture (2nd Edition)'
         );
 
-        
         expect(
-          res.body.data.totalCopies
+          res.body.data
+            .totalCopies
         ).toBe(3);
 
         expect(
-          res.body.data.availableCopies
+          res.body.data
+            .availableCopies
         ).toBe(3);
       }
     );
