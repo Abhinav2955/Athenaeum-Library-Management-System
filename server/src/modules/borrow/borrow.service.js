@@ -326,6 +326,11 @@ const checkout = async (
 
             status:
               'ready',
+
+            expiresAt: {
+              [Op.gt]:
+                new Date(),
+            },
           },
 
           transaction: t,
