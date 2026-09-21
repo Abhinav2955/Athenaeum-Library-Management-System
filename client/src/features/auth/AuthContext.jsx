@@ -9,11 +9,13 @@ import {
 
 import {
   setAccessToken,
+  setSessionExpiredHandler,
 } from '../../api/axiosClient';
 
 import * as authApi from '../../api/auth.api';
 
-const AuthContext = createContext(null);
+const AuthContext =
+  createContext(null);
 
 export function AuthProvider({
   children,
@@ -66,6 +68,20 @@ export function AuthProvider({
         null
       );
     }, []);
+
+  useEffect(() => {
+    setSessionExpiredHandler(
+      clearSession
+    );
+
+    return () => {
+      setSessionExpiredHandler(
+        null
+      );
+    };
+  }, [
+    clearSession,
+  ]);
 
   const refreshUser =
     useCallback(

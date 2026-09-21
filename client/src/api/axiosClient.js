@@ -11,19 +11,43 @@ const axiosClient = axios.create({
 
 let accessToken = null;
 let refreshPromise = null;
+let sessionExpiredHandler = null;
 
-export const setAccessToken = (token) => {
+export const setAccessToken = (
+  token
+) => {
   accessToken = token;
 
   if (token) {
-    axiosClient.defaults.headers.common.Authorization = `Bearer ${token}`;
+    axiosClient.defaults.headers.common.Authorization =
+      `Bearer ${token}`;
+
     return;
   }
 
   delete axiosClient.defaults.headers.common.Authorization;
 };
 
-export const getAccessToken = () => accessToken;
+export const getAccessToken =
+  () => accessToken;
+
+export const setSessionExpiredHandler =
+  (handler) => {
+    sessionExpiredHandler =
+      typeof handler ===
+      'function'
+        ? handler
+        : null;
+  };
+
+const expireSession =
+  () => {
+    setAccessToken(null);
+
+    if (sessionExpiredHandler) {
+      sessionExpiredHandler();
+    }
+  };
 
 const noRefreshPaths = [
   '/auth/login',
@@ -36,55 +60,90 @@ const noRefreshPaths = [
   '/auth/logout',
 ];
 
-const shouldSkipRefresh = (url = '') =>
-  noRefreshPaths.some((path) => url.includes(path));
+const shouldSkipRefresh =
+  (url = '') =>
+    noRefreshPaths.some(
+      (path) =>
+        url.includes(path)
+    );
 
-axiosClient.interceptors.request.use((config) => {
-  if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+axiosClient.interceptors.request.use(
+  (config) => {
+    if (accessToken) {
+      config.headers.Authorization =
+        `Bearer ${accessToken}`;
+    }
+
+    return config;
   }
-
-  return config;
-});
+);
 
 axiosClient.interceptors.response.use(
-  (response) => response,
+  (response) =>
+    response,
+
   async (error) => {
-    const config = error.config;
-    const response = error.response;
+    const config =
+      error.config;
+
+    const response =
+      error.response;
 
     if (
-      response?.status !== 401 ||
+      response?.status !==
+        401 ||
       !config ||
       config._retried ||
-      shouldSkipRefresh(config.url)
+      shouldSkipRefresh(
+        config.url
+      )
     ) {
-      return Promise.reject(error);
+      return Promise.reject(
+        error
+      );
     }
 
     config._retried = true;
 
     try {
       if (!refreshPromise) {
-        refreshPromise = axiosClient
-          .post('/auth/refresh')
-          .finally(() => {
-            refreshPromise = null;
-          });
+        refreshPromise =
+          axiosClient
+            .post(
+              '/auth/refresh'
+            )
+            .finally(() => {
+              refreshPromise =
+                null;
+            });
       }
 
-      const refreshResponse = await refreshPromise;
-      const newAccessToken = refreshResponse.data.data.accessToken;
+      const refreshResponse =
+        await refreshPromise;
 
-      setAccessToken(newAccessToken);
+      const newAccessToken =
+        refreshResponse.data
+          .data.accessToken;
 
-      config.headers = config.headers || {};
-      config.headers.Authorization = `Bearer ${newAccessToken}`;
+      setAccessToken(
+        newAccessToken
+      );
 
-      return axiosClient(config);
+      config.headers =
+        config.headers || {};
+
+      config.headers.Authorization =
+        `Bearer ${newAccessToken}`;
+
+      return axiosClient(
+        config
+      );
     } catch {
-      setAccessToken(null);
-      return Promise.reject(error);
+      expireSession();
+
+      return Promise.reject(
+        error
+      );
     }
   }
 );
