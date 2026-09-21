@@ -30,108 +30,122 @@ const {
 
 const SALT_ROUNDS = 12;
 const MAX_FAILED_ATTEMPTS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000;
-const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
-const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
-const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000;
+const LOCK_DURATION_MS =
+  15 * 60 * 1000;
+const VERIFICATION_TOKEN_EXPIRY_MS =
+  24 * 60 * 60 * 1000;
+const VERIFICATION_RESEND_COOLDOWN_MS =
+  60 * 1000;
+const RESET_TOKEN_EXPIRY_MS =
+  60 * 60 * 1000;
 
-const escapeHtml = (
-  value
-) =>
-  String(
-    value ?? ''
-  ).replace(
-    /[&<>"']/g,
-    (character) => {
-      const entities = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-      };
+const escapeHtml =
+  (value) =>
+    String(
+      value ?? ''
+    ).replace(
+      /[&<>"']/g,
+      (character) => {
+        const entities = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        };
 
-      return entities[
-        character
-      ];
+        return entities[
+          character
+        ];
+      }
+    );
+
+const msFromExpiry =
+  (expiresIn) => {
+    const match =
+      /^(\d+)([smhd])$/.exec(
+        expiresIn
+      );
+
+    if (!match) {
+      return (
+        15 *
+        60 *
+        1000
+      );
     }
-  );
 
-const msFromExpiry = (
-  expiresIn
-) => {
-  const match =
-    /^(\d+)([smhd])$/.exec(
-      expiresIn
+    const value =
+      Number(
+        match[1]
+      );
+
+    const multiplier = {
+      s: 1000,
+      m: 60 * 1000,
+      h:
+        60 *
+        60 *
+        1000,
+      d:
+        24 *
+        60 *
+        60 *
+        1000,
+    }[match[2]];
+
+    return (
+      value *
+      multiplier
     );
+  };
 
-  if (!match) {
-    return 15 * 60 * 1000;
-  }
+const withTimeout =
+  (promise, ms) =>
+    new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        const timer =
+          setTimeout(
+            () => {
+              reject(
+                new Error(
+                  'Email queue timed out'
+                )
+              );
+            },
+            ms
+          );
 
-  const value =
-    Number(
-      match[1]
-    );
-
-  const multiplier = {
-    s: 1000,
-    m: 60 * 1000,
-    h: 60 * 60 * 1000,
-    d: 24 * 60 * 60 * 1000,
-  }[match[2]];
-
-  return value * multiplier;
-};
-
-const withTimeout = (
-  promise,
-  ms
-) =>
-  new Promise(
-    (
-      resolve,
-      reject
-    ) => {
-      const timer =
-        setTimeout(
-          () => {
-            reject(
-              new Error(
-                'Email queue timed out'
-              )
-            );
-          },
-          ms
-        );
-
-      Promise.resolve(
-        promise
-      )
-        .then(
-          (result) => {
-            clearTimeout(
-              timer
-            );
-
-            resolve(
-              result
-            );
-          }
+        Promise.resolve(
+          promise
         )
-        .catch(
-          (error) => {
-            clearTimeout(
-              timer
-            );
+          .then(
+            (result) => {
+              clearTimeout(
+                timer
+              );
 
-            reject(
-              error
-            );
-          }
-        );
-    }
-  );
+              resolve(
+                result
+              );
+            }
+          )
+          .catch(
+            (error) => {
+              clearTimeout(
+                timer
+              );
+
+              reject(
+                error
+              );
+            }
+          );
+      }
+    );
 
 const issueTokenPair =
   async (
@@ -189,9 +203,7 @@ const issueTokenPair =
   };
 
 const sendVerificationEmail =
-  async (
-    user
-  ) => {
+  async (user) => {
     const rawToken =
       crypto
         .randomBytes(32)
@@ -376,9 +388,7 @@ const verifyEmail =
   };
 
 const resendVerificationEmail =
-  async (
-    email
-  ) => {
+  async (email) => {
     const normalizedEmail =
       email
         .trim()
@@ -394,8 +404,7 @@ const resendVerificationEmail =
 
     if (!user) {
       return {
-        sent:
-          false,
+        sent: false,
       };
     }
 
@@ -403,8 +412,7 @@ const resendVerificationEmail =
       user.isEmailVerified
     ) {
       return {
-        sent:
-          false,
+        sent: false,
       };
     }
 
@@ -465,8 +473,7 @@ const resendVerificationEmail =
     );
 
     return {
-      sent:
-        true,
+      sent: true,
     };
   };
 
@@ -483,110 +490,165 @@ const login =
         .trim()
         .toLowerCase();
 
-    const user =
-      await User.findOne({
-        where: {
-          email:
-            normalizedEmail,
-        },
-      });
+    return sequelize.transaction(
+      async (
+        transaction
+      ) => {
+        const user =
+          await User.findOne({
+            where: {
+              email:
+                normalizedEmail,
+            },
 
-    if (!user) {
-      throw ApiError.unauthorized(
-        'Invalid email or password'
-      );
-    }
+            transaction,
 
-    if (
-      user.lockedUntil &&
-      user.lockedUntil >
-        new Date()
-    ) {
-      const minutesLeft =
-        Math.ceil(
-          (
-            user.lockedUntil -
-            new Date()
-          ) /
-            60000
-        );
+            lock:
+              transaction
+                .LOCK.UPDATE,
+          });
 
-      throw ApiError.forbidden(
-        `Account temporarily locked. Try again in ${minutesLeft} minute(s)`
-      );
-    }
-
-    const isMatch =
-      await bcrypt.compare(
-        password,
-        user.passwordHash
-      );
-
-    if (!isMatch) {
-      user.failedLoginAttempts +=
-        1;
-
-      if (
-        user.failedLoginAttempts >=
-        MAX_FAILED_ATTEMPTS
-      ) {
-        user.lockedUntil =
-          new Date(
-            Date.now() +
-              LOCK_DURATION_MS
+        if (!user) {
+          throw ApiError.unauthorized(
+            'Invalid email or password'
           );
+        }
+
+        if (
+          user.lockedUntil &&
+          user.lockedUntil >
+            new Date()
+        ) {
+          const minutesLeft =
+            Math.ceil(
+              (
+                user.lockedUntil -
+                new Date()
+              ) /
+                60000
+            );
+
+          throw ApiError.forbidden(
+            `Account temporarily locked. Try again in ${minutesLeft} minute(s)`
+          );
+        }
+
+        const isMatch =
+          await bcrypt.compare(
+            password,
+            user.passwordHash
+          );
+
+        if (!isMatch) {
+          user.failedLoginAttempts +=
+            1;
+
+          if (
+            user.failedLoginAttempts >=
+            MAX_FAILED_ATTEMPTS
+          ) {
+            user.lockedUntil =
+              new Date(
+                Date.now() +
+                  LOCK_DURATION_MS
+              );
+
+            user.failedLoginAttempts =
+              0;
+          }
+
+          await user.save({
+            transaction,
+          });
+
+          const result = {
+            invalidCredentials:
+              true,
+          };
+
+          if (
+            user.lockedUntil &&
+            user.lockedUntil >
+              new Date()
+          ) {
+            result.locked =
+              true;
+          }
+
+          return result;
+        }
+
+        if (
+          !user.isEmailVerified &&
+          env.NODE_ENV !==
+            'test'
+        ) {
+          throw ApiError.forbidden(
+            'Please verify your email before signing in'
+          );
+        }
+
+        if (
+          user.membershipStatus ===
+          'suspended'
+        ) {
+          throw ApiError.forbidden(
+            'Your account has been suspended. Contact the library.'
+          );
+        }
 
         user.failedLoginAttempts =
           0;
+
+        user.lockedUntil =
+          null;
+
+        await user.save({
+          transaction,
+        });
+
+        const tokens =
+          await issueTokenPair(
+            user,
+            meta,
+            transaction
+          );
+
+        return {
+          invalidCredentials:
+            false,
+
+          user,
+
+          accessToken:
+            tokens.accessToken,
+
+          refreshToken:
+            tokens.refreshToken,
+        };
       }
+    ).then(
+      (result) => {
+        if (
+          result.invalidCredentials
+        ) {
+          throw ApiError.unauthorized(
+            'Invalid email or password'
+          );
+        }
 
-      await user.save();
+        return {
+          user:
+            result.user,
 
-      throw ApiError.unauthorized(
-        'Invalid email or password'
-      );
-    }
+          accessToken:
+            result.accessToken,
 
-    if (
-      !user.isEmailVerified &&
-      env.NODE_ENV !==
-        'test'
-    ) {
-      throw ApiError.forbidden(
-        'Please verify your email before signing in'
-      );
-    }
-
-    if (
-      user.membershipStatus ===
-      'suspended'
-    ) {
-      throw ApiError.forbidden(
-        'Your account has been suspended. Contact the library.'
-      );
-    }
-
-    user.failedLoginAttempts =
-      0;
-
-    user.lockedUntil =
-      null;
-
-    await user.save();
-
-    const tokens =
-      await issueTokenPair(
-        user,
-        meta
-      );
-
-    return {
-      user,
-      accessToken:
-        tokens.accessToken,
-      refreshToken:
-        tokens.refreshToken,
-    };
+          refreshToken:
+            result.refreshToken,
+        };
+      }
+    );
   };
 
 const refresh =
@@ -781,9 +843,7 @@ const refresh =
   };
 
 const logout =
-  async (
-    rawToken
-  ) => {
+  async (rawToken) => {
     if (!rawToken) {
       return;
     }
@@ -867,9 +927,7 @@ const changePassword =
   };
 
 const forgotPassword =
-  async (
-    email
-  ) => {
+  async (email) => {
     const normalizedEmail =
       email
         .trim()
