@@ -795,144 +795,159 @@ const renew = async (
   recordId,
   requestingUser
 ) => {
-  const record =
-    await BorrowRecord.findByPk(
-      recordId,
-      {
-        include: [
+  return sequelize.transaction(
+    async (t) => {
+      const record =
+        await BorrowRecord.findByPk(
+          recordId,
           {
-            model:
-              BookCopy,
+            include: [
+              {
+                model:
+                  BookCopy,
 
-            as: 'copy',
-          },
+                as: 'copy',
+              },
 
-          {
-            model:
-              User,
+              {
+                model:
+                  User,
 
-            as: 'borrower',
+                as: 'borrower',
 
-            attributes: [
-              'id',
-              'name',
-              'email',
-              'membershipStatus',
+                attributes: [
+                  'id',
+                  'name',
+                  'email',
+                  'membershipStatus',
+                ],
+              },
             ],
-          },
-        ],
+
+            transaction: t,
+
+            lock:
+              t.LOCK.UPDATE,
+          }
+        );
+
+      if (!record) {
+        throw ApiError.notFound(
+          'Borrow record not found'
+        );
       }
-    );
 
-  if (!record) {
-    throw ApiError.notFound(
-      'Borrow record not found'
-    );
-  }
+      if (
+        record.userId !==
+          requestingUser.id &&
+        ![
+          'admin',
+          'librarian',
+        ].includes(
+          requestingUser.role
+        )
+      ) {
+        throw ApiError.forbidden(
+          'You can only renew your own loans'
+        );
+      }
 
-  if (
-    record.userId !==
-      requestingUser.id &&
-    ![
-      'admin',
-      'librarian',
-    ].includes(
-      requestingUser.role
-    )
-  ) {
-    throw ApiError.forbidden(
-      'You can only renew your own loans'
-    );
-  }
+      if (
+        record.borrower
+      ) {
+        assertActiveMembership(
+          record.borrower
+        );
+      } else {
+        const borrower =
+          await User.findByPk(
+            record.userId,
+            {
+              transaction: t,
+            }
+          );
 
-  if (
-    record.borrower
-  ) {
-    assertActiveMembership(
-      record.borrower
-    );
-  } else {
-    const borrower =
-      await User.findByPk(
-        record.userId
+        if (!borrower) {
+          throw ApiError.notFound(
+            'Member not found'
+          );
+        }
+
+        assertActiveMembership(
+          borrower
+        );
+      }
+
+      if (
+        record.status ===
+          'overdue' ||
+        (
+          record.status ===
+            'active' &&
+          new Date() >
+            record.dueAt
+        )
+      ) {
+        throw ApiError.badRequest(
+          'Overdue loans cannot be renewed'
+        );
+      }
+
+      if (
+        record.status !==
+        'active'
+      ) {
+        throw ApiError.badRequest(
+          'Only active loans can be renewed'
+        );
+      }
+
+      if (
+        record.renewedCount >=
+        MAX_RENEWALS
+      ) {
+        throw ApiError.badRequest(
+          `This loan has already been renewed the maximum of ${MAX_RENEWALS} times`
+        );
+      }
+
+      const bookId =
+        record.copy.bookId;
+
+      if (
+        await reservationService
+          .hasWaitingReservations(
+            bookId
+          )
+      ) {
+        throw ApiError.badRequest(
+          'This book has a reservation queue and cannot be renewed'
+        );
+      }
+
+      record.dueAt =
+        addDays(
+          record.dueAt,
+          LOAN_PERIOD_DAYS
+        );
+
+      record.renewedCount += 1;
+
+      await record.save({
+        transaction: t,
+      });
+
+      emitMemberLoanChange(
+        record.userId,
+        [
+          'loans',
+        ],
+        t
       );
 
-    if (!borrower) {
-      throw ApiError.notFound(
-        'Member not found'
-      );
+      return record;
     }
-
-    assertActiveMembership(
-      borrower
-    );
-  }
-
-  if (
-    record.status ===
-      'overdue' ||
-    (
-      record.status ===
-        'active' &&
-      new Date() >
-        record.dueAt
-    )
-  ) {
-    throw ApiError.badRequest(
-      'Overdue loans cannot be renewed'
-    );
-  }
-
-  if (
-    record.status !==
-    'active'
-  ) {
-    throw ApiError.badRequest(
-      'Only active loans can be renewed'
-    );
-  }
-
-  if (
-    record.renewedCount >=
-    MAX_RENEWALS
-  ) {
-    throw ApiError.badRequest(
-      `This loan has already been renewed the maximum of ${MAX_RENEWALS} times`
-    );
-  }
-
-  const bookId =
-    record.copy.bookId;
-
-  if (
-    await reservationService
-      .hasWaitingReservations(
-        bookId
-      )
-  ) {
-    throw ApiError.badRequest(
-      'This book has a reservation queue and cannot be renewed'
-    );
-  }
-
-  record.dueAt =
-    addDays(
-      record.dueAt,
-      LOAN_PERIOD_DAYS
-    );
-
-  record.renewedCount += 1;
-
-  await record.save();
-
-  emitMemberLoanChange(
-    record.userId,
-    [
-      'loans',
-    ]
   );
-
-  return record;
 };
 
 const listMyLoans = async (

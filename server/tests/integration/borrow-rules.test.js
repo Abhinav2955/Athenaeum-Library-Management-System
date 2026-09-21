@@ -939,6 +939,149 @@ describe(
         );
       }
     );
+    it(
+  'serializes simultaneous renewals at the maximum renewal boundary',
+  async () => {
+    const credentials = {
+      name:
+        'Concurrent Renewal Member',
+
+      email:
+        `borrow.rules.concurrentrenew.${stamp}@example.com`,
+
+      password:
+        'StrongPass1',
+    };
+
+    const token =
+      await registerAndLogin(
+        credentials
+      );
+
+    const bookId =
+      await createBookWithCopy(
+        '9784000000014',
+        'Concurrent Renewal Test'
+      );
+
+    const checkout =
+      await request(app)
+        .post(
+          '/api/v1/borrow/checkout'
+        )
+        .set(
+          'Authorization',
+          `Bearer ${token}`
+        )
+        .send({
+          bookId,
+        });
+
+    expect(
+      checkout.statusCode
+    ).toBe(201);
+
+    const recordId =
+      checkout.body
+        .data.id;
+
+    await BorrowRecord.update(
+      {
+        renewedCount: 1,
+      },
+      {
+        where: {
+          id:
+            recordId,
+        },
+      }
+    );
+
+    const before =
+      await BorrowRecord.findByPk(
+        recordId
+      );
+
+    const dueAtBefore =
+      new Date(
+        before.dueAt
+      ).getTime();
+
+    const responses =
+      await Promise.all([
+        request(app)
+          .post(
+            `/api/v1/borrow/${recordId}/renew`
+          )
+          .set(
+            'Authorization',
+            `Bearer ${token}`
+          ),
+
+        request(app)
+          .post(
+            `/api/v1/borrow/${recordId}/renew`
+          )
+          .set(
+            'Authorization',
+            `Bearer ${token}`
+          ),
+      ]);
+
+    const statusCodes =
+      responses
+        .map(
+          (response) =>
+            response.statusCode
+        )
+        .sort(
+          (a, b) =>
+            a - b
+        );
+
+    expect(
+      statusCodes
+    ).toEqual([
+      200,
+      400,
+    ]);
+
+    const rejected =
+      responses.find(
+        (response) =>
+          response.statusCode ===
+          400
+      );
+
+    expect(
+      rejected.body.message
+    ).toMatch(
+      /maximum/i
+    );
+
+    const after =
+      await BorrowRecord.findByPk(
+        recordId
+      );
+
+    expect(
+      after.renewedCount
+    ).toBe(2);
+
+    expect(
+      new Date(
+        after.dueAt
+      ).getTime()
+    ).toBe(
+      dueAtBefore +
+        14 *
+          24 *
+          60 *
+          60 *
+          1000
+    );
+  }
+);
 
     it(
       'blocks renewal when another member is waiting in the reservation queue',
