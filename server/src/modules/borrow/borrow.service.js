@@ -200,6 +200,7 @@ const checkout = async (
           borrowerId,
           {
             transaction: t,
+            lock: t.LOCK.UPDATE,
           }
         );
 

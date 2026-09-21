@@ -5,8 +5,6 @@ const app = require('../../src/app');
 const {
   sequelize,
   User,
-  Book,
-  BookCopy,
   BorrowRecord,
 } = require('../../src/database/models');
 
@@ -120,7 +118,6 @@ beforeAll(async () => {
     force: true,
   });
 
-  
   activeMemberToken =
     await registerAndLogin(
       activeCredentials
@@ -134,7 +131,6 @@ beforeAll(async () => {
       },
     });
 
-  
   suspendedMemberToken =
     await registerAndLogin(
       suspendedCredentials
@@ -153,7 +149,6 @@ beforeAll(async () => {
       'suspended',
   });
 
-  
   expiredMemberToken =
     await registerAndLogin(
       expiredCredentials
@@ -172,7 +167,6 @@ beforeAll(async () => {
       'expired',
   });
 
-  
   await registerAndLogin(
     adminCredentials
   );
@@ -253,10 +247,10 @@ describe(
         ).toBe(403);
 
         expect(
-  response.body.message
-).toMatch(
-  /membership|suspended/i
-);
+          response.body.message
+        ).toMatch(
+          /membership|suspended/i
+        );
       }
     );
 
@@ -297,7 +291,6 @@ describe(
     it(
       'blocks new borrowing when an active-status loan is already past due',
       async () => {
-        
         const credentials = {
           name:
             'Past Due Member',
@@ -313,14 +306,6 @@ describe(
           await registerAndLogin(
             credentials
           );
-
-        const member =
-          await User.findOne({
-            where: {
-              email:
-                credentials.email,
-            },
-          });
 
         const firstBookId =
           await createBookWithCopy(
@@ -346,7 +331,6 @@ describe(
           checkout.statusCode
         ).toBe(201);
 
-        
         await BorrowRecord.update(
           {
             status:
@@ -441,6 +425,10 @@ describe(
                 firstBookId,
             });
 
+        expect(
+          checkout.statusCode
+        ).toBe(201);
+
         await BorrowRecord.update(
           {
             status:
@@ -484,6 +472,150 @@ describe(
         ).toMatch(
           /overdue/i
         );
+      }
+    );
+
+    it(
+      'serializes simultaneous checkouts so a member cannot exceed the five-loan limit',
+      async () => {
+        const credentials = {
+          name:
+            'Concurrent Checkout Member',
+
+          email:
+            `borrow.rules.concurrent.${stamp}@example.com`,
+
+          password:
+            'StrongPass1',
+        };
+
+        const token =
+          await registerAndLogin(
+            credentials
+          );
+
+        const member =
+          await User.findOne({
+            where: {
+              email:
+                credentials.email,
+            },
+          });
+
+        const bookIds = [];
+
+        for (
+          let i = 0;
+          i < 6;
+          i += 1
+        ) {
+          bookIds.push(
+            await createBookWithCopy(
+              `97840000001${String(
+                i
+              ).padStart(
+                2,
+                '0'
+              )}`,
+              `Concurrent Checkout Book ${i + 1}`
+            )
+          );
+        }
+
+        for (
+          let i = 0;
+          i < 4;
+          i += 1
+        ) {
+          const response =
+            await request(app)
+              .post(
+                '/api/v1/borrow/checkout'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${token}`
+              )
+              .send({
+                bookId:
+                  bookIds[i],
+              });
+
+          expect(
+            response.statusCode
+          ).toBe(201);
+        }
+
+        const responses =
+          await Promise.all([
+            request(app)
+              .post(
+                '/api/v1/borrow/checkout'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${token}`
+              )
+              .send({
+                bookId:
+                  bookIds[4],
+              }),
+
+            request(app)
+              .post(
+                '/api/v1/borrow/checkout'
+              )
+              .set(
+                'Authorization',
+                `Bearer ${token}`
+              )
+              .send({
+                bookId:
+                  bookIds[5],
+              }),
+          ]);
+
+        const statusCodes =
+          responses
+            .map(
+              (response) =>
+                response.statusCode
+            )
+            .sort();
+
+        expect(
+          statusCodes
+        ).toEqual([
+          201,
+          400,
+        ]);
+
+        const rejected =
+          responses.find(
+            (response) =>
+              response.statusCode ===
+              400
+          );
+
+        expect(
+          rejected.body.message
+        ).toMatch(
+          /5-loan limit/i
+        );
+
+        const activeLoanCount =
+          await BorrowRecord.count({
+            where: {
+              userId:
+                member.id,
+              status:
+                'active',
+            },
+          });
+
+        expect(
+          activeLoanCount
+        ).toBe(5);
       }
     );
 
@@ -975,10 +1107,10 @@ describe(
         ).toBe(403);
 
         expect(
-  response.body.message
-).toMatch(
-  /membership|suspended/i
-);
+          response.body.message
+        ).toMatch(
+          /membership|suspended/i
+        );
       }
     );
   }
