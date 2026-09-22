@@ -8,20 +8,18 @@ export const searchMembers =
   ) => {
     const response =
       await axiosClient.get(
-        '/users',
+        '/members',
         {
           params: {
             search,
             limit,
-            role:
-              'member',
           },
         }
       );
 
     return (
-      response.data.data
-        .users || []
+      response.data.data ||
+      []
     );
   };
 
@@ -31,7 +29,7 @@ export const getMemberById =
   ) => {
     const response =
       await axiosClient.get(
-        `/users/${memberId}`
+        `/members/${memberId}`
       );
 
     return response.data.data;
@@ -44,7 +42,7 @@ export const updateMembershipStatus =
   ) => {
     const response =
       await axiosClient.patch(
-        `/users/${memberId}/membership`,
+        `/members/${memberId}/status`,
         {
           membershipStatus,
         }

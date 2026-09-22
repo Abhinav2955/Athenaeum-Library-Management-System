@@ -61,6 +61,9 @@ import StaffFines
 import StaffReservations
   from '../pages/StaffReservations';
 
+import StaffMembers
+  from '../pages/StaffMembers';
+
 import NotFound
   from '../pages/NotFound';
 
@@ -225,6 +228,19 @@ export default function AppRouter() {
             }
           >
             <StaffFines />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/members"
+        element={
+          <ProtectedRoute
+            roles={
+              staffRoles
+            }
+          >
+            <StaffMembers />
           </ProtectedRoute>
         }
       />

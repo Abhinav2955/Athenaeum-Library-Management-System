@@ -180,6 +180,15 @@ export default function AppShell({
             </NavItem>
 
             <NavItem
+              to="/admin/members"
+              onClick={
+                closeMobileMenu
+              }
+            >
+              Members
+            </NavItem>
+
+            <NavItem
               to="/admin/books"
               onClick={
                 closeMobileMenu
