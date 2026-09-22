@@ -38,6 +38,8 @@ const VERIFICATION_RESEND_COOLDOWN_MS =
   60 * 1000;
 const RESET_TOKEN_EXPIRY_MS =
   60 * 60 * 1000;
+const PASSWORD_RESET_REQUEST_COOLDOWN_MS =
+  60 * 1000;
 
 const escapeHtml =
   (value) =>
@@ -229,28 +231,11 @@ const revokeActiveRefreshTokens =
     );
   };
 
-const sendVerificationEmail =
-  async (user) => {
-    const rawToken =
-      crypto
-        .randomBytes(32)
-        .toString(
-          'hex'
-        );
-
-    user.emailVerificationTokenHash =
-      hashToken(
-        rawToken
-      );
-
-    user.emailVerificationExpires =
-      new Date(
-        Date.now() +
-          VERIFICATION_TOKEN_EXPIRY_MS
-      );
-
-    await user.save();
-
+const queueVerificationEmail =
+  async (
+    user,
+    rawToken
+  ) => {
     const link =
       `${env.FRONTEND_URL}/verify-email?token=${encodeURIComponent(
         rawToken
@@ -300,6 +285,49 @@ const sendVerificationEmail =
         }
       );
     }
+  };
+
+const createVerificationToken =
+  async (
+    user,
+    transaction = null
+  ) => {
+    const rawToken =
+      crypto
+        .randomBytes(32)
+        .toString(
+          'hex'
+        );
+
+    user.emailVerificationTokenHash =
+      hashToken(
+        rawToken
+      );
+
+    user.emailVerificationExpires =
+      new Date(
+        Date.now() +
+          VERIFICATION_TOKEN_EXPIRY_MS
+      );
+
+    await user.save({
+      transaction,
+    });
+
+    return rawToken;
+  };
+
+const sendVerificationEmail =
+  async (user) => {
+    const rawToken =
+      await createVerificationToken(
+        user
+      );
+
+    await queueVerificationEmail(
+      user,
+      rawToken
+    );
   };
 
 const register =
@@ -477,86 +505,136 @@ const resendVerificationEmail =
         .trim()
         .toLowerCase();
 
-    const user =
-      await User.findOne({
-        where: {
-          email:
-            normalizedEmail,
-        },
-      });
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findOne({
+              where: {
+                email:
+                  normalizedEmail,
+              },
 
-    if (!user) {
-      return {
-        sent: false,
-      };
-    }
+              transaction,
 
-    if (
-      user.isEmailVerified
-    ) {
-      return {
-        sent: false,
-      };
-    }
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
 
-    if (
-      user.emailVerificationExpires
-    ) {
-      const previousSendAt =
-        new Date(
-          new Date(
+          if (!user) {
+            return {
+              sent:
+                false,
+            };
+          }
+
+          if (
+            user.isEmailVerified
+          ) {
+            return {
+              sent:
+                false,
+            };
+          }
+
+          if (
             user.emailVerificationExpires
-          ).getTime() -
-            VERIFICATION_TOKEN_EXPIRY_MS
+          ) {
+            const previousSendAt =
+              new Date(
+                new Date(
+                  user.emailVerificationExpires
+                ).getTime() -
+                  VERIFICATION_TOKEN_EXPIRY_MS
+              );
+
+            const elapsed =
+              Date.now() -
+              previousSendAt.getTime();
+
+            if (
+              elapsed <
+              VERIFICATION_RESEND_COOLDOWN_MS
+            ) {
+              const remainingSeconds =
+                Math.max(
+                  1,
+                  Math.ceil(
+                    (
+                      VERIFICATION_RESEND_COOLDOWN_MS -
+                      elapsed
+                    ) /
+                      1000
+                  )
+                );
+
+              return {
+                sent:
+                  false,
+
+                rateLimited:
+                  true,
+
+                remainingSeconds,
+              };
+            }
+          }
+
+          const rawToken =
+            await createVerificationToken(
+              user,
+              transaction
+            );
+
+          return {
+            sent:
+              true,
+
+            user,
+
+            rawToken,
+          };
+        }
+      );
+
+    if (
+      result.rateLimited
+    ) {
+      if (
+        typeof ApiError.tooManyRequests ===
+        'function'
+      ) {
+        throw ApiError.tooManyRequests(
+          `Please wait ${result.remainingSeconds} second(s) before requesting another verification email`
+        );
+      }
+
+      const error =
+        ApiError.badRequest(
+          `Please wait ${result.remainingSeconds} second(s) before requesting another verification email`
         );
 
-      const elapsed =
-        Date.now() -
-        previousSendAt.getTime();
+      error.statusCode =
+        429;
 
-      if (
-        elapsed <
-        VERIFICATION_RESEND_COOLDOWN_MS
-      ) {
-        const remainingSeconds =
-          Math.max(
-            1,
-            Math.ceil(
-              (
-                VERIFICATION_RESEND_COOLDOWN_MS -
-                elapsed
-              ) /
-                1000
-            )
-          );
-
-        if (
-          typeof ApiError.tooManyRequests ===
-          'function'
-        ) {
-          throw ApiError.tooManyRequests(
-            `Please wait ${remainingSeconds} second(s) before requesting another verification email`
-          );
-        }
-
-        const error =
-          ApiError.badRequest(
-            `Please wait ${remainingSeconds} second(s) before requesting another verification email`
-          );
-
-        error.statusCode =
-          429;
-
-        throw error;
-      }
+      throw error;
     }
 
-    await sendVerificationEmail(
-      user
-    );
+    if (
+      result.sent
+    ) {
+      await queueVerificationEmail(
+        result.user,
+        result.rawToken
+      );
+    }
 
     return {
-      sent: true,
+      sent:
+        result.sent,
     };
   };
 
@@ -1028,46 +1106,113 @@ const forgotPassword =
         .trim()
         .toLowerCase();
 
-    const user =
-      await User.findOne({
-        where: {
-          email:
-            normalizedEmail,
-        },
-      });
+    const result =
+      await sequelize.transaction(
+        async (
+          transaction
+        ) => {
+          const user =
+            await User.findOne({
+              where: {
+                email:
+                  normalizedEmail,
+              },
 
-    if (!user) {
+              transaction,
+
+              lock:
+                transaction
+                  .LOCK.UPDATE,
+            });
+
+          if (!user) {
+            return {
+              found:
+                false,
+            };
+          }
+
+          if (
+            user.passwordResetTokenHash &&
+            user.passwordResetExpires
+          ) {
+            const previousSendAt =
+              new Date(
+                new Date(
+                  user.passwordResetExpires
+                ).getTime() -
+                  RESET_TOKEN_EXPIRY_MS
+              );
+
+            const elapsed =
+              Date.now() -
+              previousSendAt.getTime();
+
+            if (
+              elapsed <
+              PASSWORD_RESET_REQUEST_COOLDOWN_MS
+            ) {
+              return {
+                found:
+                  true,
+
+                issued:
+                  false,
+              };
+            }
+          }
+
+          const rawToken =
+            crypto
+              .randomBytes(32)
+              .toString(
+                'hex'
+              );
+
+          user.passwordResetTokenHash =
+            hashToken(
+              rawToken
+            );
+
+          user.passwordResetExpires =
+            new Date(
+              Date.now() +
+                RESET_TOKEN_EXPIRY_MS
+            );
+
+          await user.save({
+            transaction,
+          });
+
+          return {
+            found:
+              true,
+
+            issued:
+              true,
+
+            user,
+
+            rawToken,
+          };
+        }
+      );
+
+    if (
+      !result.found ||
+      !result.issued
+    ) {
       return;
     }
 
-    const rawToken =
-      crypto
-        .randomBytes(32)
-        .toString(
-          'hex'
-        );
-
-    user.passwordResetTokenHash =
-      hashToken(
-        rawToken
-      );
-
-    user.passwordResetExpires =
-      new Date(
-        Date.now() +
-          RESET_TOKEN_EXPIRY_MS
-      );
-
-    await user.save();
-
     const link =
       `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(
-        rawToken
+        result.rawToken
       )}`;
 
     const safeName =
       escapeHtml(
-        user.name
+        result.user.name
       );
 
     const safeLink =
@@ -1079,7 +1224,7 @@ const forgotPassword =
       await withTimeout(
         queueEmail({
           to:
-            user.email,
+            result.user.email,
 
           subject:
             'Reset your Athenaeum password',
@@ -1202,6 +1347,7 @@ const resetPassword =
 
 module.exports = {
   VERIFICATION_RESEND_COOLDOWN_MS,
+  PASSWORD_RESET_REQUEST_COOLDOWN_MS,
   register,
   login,
   refresh,
