@@ -82,8 +82,10 @@ export function NotificationProvider({
           setUnreadCount(
             count
           );
+
+          return true;
         } catch {
-          return;
+          return false;
         }
       },
       []
@@ -360,10 +362,10 @@ export function NotificationProvider({
             id
           );
         } catch {
-          return;
+          await fetchNotifications();
         }
       },
-      []
+      [fetchNotifications]
     );
 
   const markAllRead =
@@ -391,10 +393,10 @@ export function NotificationProvider({
         try {
           await markAllNotificationsRead();
         } catch {
-          return;
+          await fetchNotifications();
         }
       },
-      []
+      [fetchNotifications]
     );
 
   const value =
@@ -459,4 +461,3 @@ export const useResourceVersion =
       ] || 0
     );
   };
-  
