@@ -702,6 +702,24 @@ describe(
             .replacedByTokenId
         ).not.toBeNull();
 
+        expect(
+          oldStored
+            .replacementTokenCiphertext
+        ).toBeTruthy();
+
+        expect(
+          oldStored
+            .replacementTokenCiphertext
+        ).not.toContain(
+          newCookie
+            .split('=')[1]
+        );
+
+        expect(
+          oldStored
+            .replacementTokenExpiresAt
+        ).not.toBeNull();
+
         const newToken =
           newCookie
             .split('=')[1];
@@ -727,7 +745,7 @@ describe(
     );
 
     it(
-      'revokes all active sessions when a rotated refresh token is reused',
+      'recovers the rotated refresh token during the overlap window',
       async () => {
         const loginRes =
           await request(app)
@@ -765,6 +783,215 @@ describe(
           getRefreshCookie(
             firstRefresh
           );
+
+        const overlapRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          overlapRefresh.statusCode
+        ).toBe(200);
+
+        expect(
+          overlapRefresh.body.data
+            .accessToken
+        ).toBeDefined();
+
+        const recoveredCookie =
+          getRefreshCookie(
+            overlapRefresh
+          );
+
+        expect(
+          recoveredCookie
+        ).toBe(
+          rotatedCookie
+        );
+
+        const rotatedToken =
+          rotatedCookie
+            .split('=')[1];
+
+        const rotatedStored =
+          await RefreshToken.findOne({
+            where: {
+              tokenHash:
+                hashToken(
+                  rotatedToken
+                ),
+            },
+          });
+
+        expect(
+          rotatedStored
+        ).not.toBeNull();
+
+        expect(
+          rotatedStored.revokedAt
+        ).toBeNull();
+      }
+    );
+
+    it(
+      'recovers the latest active refresh token through a rapid rotation chain',
+      async () => {
+        const loginRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/login'
+            )
+            .send(
+              testUser
+            );
+
+        expect(
+          loginRes.statusCode
+        ).toBe(200);
+
+        const originalCookie =
+          getRefreshCookie(
+            loginRes
+          );
+
+        const firstRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          firstRefresh.statusCode
+        ).toBe(200);
+
+        const secondCookie =
+          getRefreshCookie(
+            firstRefresh
+          );
+
+        const secondRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              secondCookie
+            );
+
+        expect(
+          secondRefresh.statusCode
+        ).toBe(200);
+
+        const thirdCookie =
+          getRefreshCookie(
+            secondRefresh
+          );
+
+        expect(
+          thirdCookie
+        ).not.toBe(
+          secondCookie
+        );
+
+        const staleRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          staleRefresh.statusCode
+        ).toBe(200);
+
+        expect(
+          getRefreshCookie(
+            staleRefresh
+          )
+        ).toBe(
+          thirdCookie
+        );
+      }
+    );
+
+    it(
+      'revokes all active sessions when a rotated refresh token is reused after the overlap window',
+      async () => {
+        const loginRes =
+          await request(app)
+            .post(
+              '/api/v1/auth/login'
+            )
+            .send(
+              testUser
+            );
+
+        expect(
+          loginRes.statusCode
+        ).toBe(200);
+
+        const originalCookie =
+          getRefreshCookie(
+            loginRes
+          );
+
+        const originalToken =
+          originalCookie
+            .split('=')[1];
+
+        const firstRefresh =
+          await request(app)
+            .post(
+              '/api/v1/auth/refresh'
+            )
+            .set(
+              'Cookie',
+              originalCookie
+            );
+
+        expect(
+          firstRefresh.statusCode
+        ).toBe(200);
+
+        const rotatedCookie =
+          getRefreshCookie(
+            firstRefresh
+          );
+
+        const originalStored =
+          await RefreshToken.findOne({
+            where: {
+              tokenHash:
+                hashToken(
+                  originalToken
+                ),
+            },
+          });
+
+        expect(
+          originalStored
+        ).not.toBeNull();
+
+        originalStored.replacementTokenExpiresAt =
+          new Date(
+            Date.now() -
+              1000
+          );
+
+        await originalStored.save();
 
         const reuseRes =
           await request(app)

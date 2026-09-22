@@ -40,6 +40,120 @@ const RESET_TOKEN_EXPIRY_MS =
   60 * 60 * 1000;
 const PASSWORD_RESET_REQUEST_COOLDOWN_MS =
   60 * 1000;
+const REFRESH_ROTATION_GRACE_MS =
+  3000;
+const MAX_REFRESH_RECOVERY_DEPTH =
+  10;
+
+const refreshRecoveryKey =
+  crypto
+    .createHash(
+      'sha256'
+    )
+    .update(
+      `athenaeum-refresh-recovery:${env.JWT_REFRESH_SECRET}`
+    )
+    .digest();
+
+const encryptRefreshToken =
+  (token) => {
+    const iv =
+      crypto.randomBytes(
+        12
+      );
+
+    const cipher =
+      crypto.createCipheriv(
+        'aes-256-gcm',
+        refreshRecoveryKey,
+        iv
+      );
+
+    const encrypted =
+      Buffer.concat([
+        cipher.update(
+          token,
+          'utf8'
+        ),
+        cipher.final(),
+      ]);
+
+    const tag =
+      cipher.getAuthTag();
+
+    return [
+      iv.toString(
+        'base64url'
+      ),
+      tag.toString(
+        'base64url'
+      ),
+      encrypted.toString(
+        'base64url'
+      ),
+    ].join('.');
+  };
+
+const decryptRefreshToken =
+  (value) => {
+    if (
+      typeof value !==
+      'string'
+    ) {
+      return null;
+    }
+
+    const parts =
+      value.split('.');
+
+    if (
+      parts.length !== 3
+    ) {
+      return null;
+    }
+
+    try {
+      const iv =
+        Buffer.from(
+          parts[0],
+          'base64url'
+        );
+
+      const tag =
+        Buffer.from(
+          parts[1],
+          'base64url'
+        );
+
+      const encrypted =
+        Buffer.from(
+          parts[2],
+          'base64url'
+        );
+
+      const decipher =
+        crypto.createDecipheriv(
+          'aes-256-gcm',
+          refreshRecoveryKey,
+          iv
+        );
+
+      decipher.setAuthTag(
+        tag
+      );
+
+      return Buffer.concat([
+        decipher.update(
+          encrypted
+        ),
+        decipher.final(),
+      ]).toString(
+        'utf8'
+      );
+    } catch {
+      return null;
+    }
+  };
 
 const escapeHtml =
   (value) =>
@@ -101,6 +215,35 @@ const msFromExpiry =
     return (
       value *
       multiplier
+    );
+  };
+
+const sameRefreshClient =
+  (
+    stored,
+    meta
+  ) => {
+    const storedUserAgent =
+      stored.userAgent ||
+      null;
+
+    const storedIpAddress =
+      stored.ipAddress ||
+      null;
+
+    const requestUserAgent =
+      meta.userAgent ||
+      null;
+
+    const requestIpAddress =
+      meta.ipAddress ||
+      null;
+
+    return (
+      storedUserAgent ===
+        requestUserAgent &&
+      storedIpAddress ===
+        requestIpAddress
     );
   };
 
@@ -229,6 +372,132 @@ const revokeActiveRefreshTokens =
         transaction,
       }
     );
+  };
+
+const recoverRotatedRefreshToken =
+  async (
+    stored,
+    userId,
+    meta,
+    transaction
+  ) => {
+    let current =
+      stored;
+
+    let recoveredToken =
+      null;
+
+    for (
+      let depth = 0;
+      depth <
+      MAX_REFRESH_RECOVERY_DEPTH;
+      depth += 1
+    ) {
+      if (
+        !current.revokedAt
+      ) {
+        if (
+          !recoveredToken
+        ) {
+          return null;
+        }
+
+        if (
+          current.expiresAt <
+          new Date()
+        ) {
+          return null;
+        }
+
+        if (
+          hashToken(
+            recoveredToken
+          ) !==
+          current.tokenHash
+        ) {
+          return null;
+        }
+
+        return {
+          stored:
+            current,
+
+          refreshToken:
+            recoveredToken,
+        };
+      }
+
+      if (
+        !sameRefreshClient(
+          current,
+          meta
+        )
+      ) {
+        return null;
+      }
+
+      if (
+        !current
+          .replacementTokenCiphertext ||
+        !current
+          .replacementTokenExpiresAt ||
+        current
+          .replacementTokenExpiresAt <=
+          new Date() ||
+        !current
+          .replacedByTokenId
+      ) {
+        return null;
+      }
+
+      const nextToken =
+        decryptRefreshToken(
+          current
+            .replacementTokenCiphertext
+        );
+
+      if (!nextToken) {
+        return null;
+      }
+
+      const next =
+        await RefreshToken.findOne({
+          where: {
+            id:
+              current
+                .replacedByTokenId,
+
+            userId,
+          },
+
+          transaction,
+
+          lock:
+            transaction
+              .LOCK.UPDATE,
+        });
+
+      if (!next) {
+        return null;
+      }
+
+      if (
+        hashToken(
+          nextToken
+        ) !==
+        next.tokenHash
+      ) {
+        return null;
+      }
+
+      recoveredToken =
+        nextToken;
+
+      current =
+        next;
+    }
+
+    return null;
   };
 
 const queueVerificationEmail =
@@ -866,25 +1135,74 @@ const refresh =
           if (
             stored.revokedAt
           ) {
-            await RefreshToken.update(
-              {
-                revokedAt:
-                  new Date(),
-              },
-              {
-                where: {
-                  userId:
-                    payload.sub,
+            const recovered =
+              await recoverRotatedRefreshToken(
+                stored,
+                payload.sub,
+                meta,
+                t
+              );
 
-                  revokedAt: {
-                    [Op.is]:
-                      null,
-                  },
-                },
+            if (
+              recovered
+            ) {
+              const user =
+                await User.findByPk(
+                  payload.sub,
+                  {
+                    transaction:
+                      t,
+                  }
+                );
 
-                transaction:
-                  t,
+              if (!user) {
+                throw ApiError.unauthorized(
+                  'User no longer exists'
+                );
               }
+
+              if (
+                !user.isEmailVerified &&
+                env.NODE_ENV !==
+                  'test'
+              ) {
+                throw ApiError.forbidden(
+                  'Please verify your email before continuing'
+                );
+              }
+
+              if (
+                user.membershipStatus ===
+                'suspended'
+              ) {
+                throw ApiError.forbidden(
+                  'Your account has been suspended'
+                );
+              }
+
+              return {
+                reuseDetected:
+                  false,
+
+                recovered:
+                  true,
+
+                user,
+
+                accessToken:
+                  signAccessToken(
+                    user
+                  ),
+
+                refreshToken:
+                  recovered
+                    .refreshToken,
+              };
+            }
+
+            await revokeActiveRefreshTokens(
+              payload.sub,
+              t
             );
 
             return {
@@ -943,13 +1261,27 @@ const refresh =
               t
             );
 
-          stored.revokedAt =
+          const now =
             new Date();
+
+          stored.revokedAt =
+            now;
 
           stored.replacedByTokenId =
             tokens
               .storedRefreshToken
               .id;
+
+          stored.replacementTokenCiphertext =
+            encryptRefreshToken(
+              tokens.refreshToken
+            );
+
+          stored.replacementTokenExpiresAt =
+            new Date(
+              now.getTime() +
+                REFRESH_ROTATION_GRACE_MS
+            );
 
           await stored.save({
             transaction:
@@ -958,6 +1290,9 @@ const refresh =
 
           return {
             reuseDetected:
+              false,
+
+            recovered:
               false,
 
             user,
