@@ -24,6 +24,14 @@ const passwordSchema =
       'Password must contain a number'
     );
 
+const secureTokenSchema =
+  z
+    .string()
+    .regex(
+      /^[a-f0-9]{64}$/i,
+      'Invalid token format'
+    );
+
 const registerSchema =
   z.object({
     body:
@@ -86,9 +94,7 @@ const verifyEmailSchema =
     body:
       z.object({
         token:
-          z
-            .string()
-            .min(20),
+          secureTokenSchema,
       }),
   });
 
@@ -143,9 +149,7 @@ const resetPasswordSchema =
     body:
       z.object({
         token:
-          z
-            .string()
-            .min(20),
+          secureTokenSchema,
 
         password:
           passwordSchema,
