@@ -28,6 +28,9 @@ const auditRoutes =
 const userRoutes =
   require('../modules/users/user.routes');
 
+const memberRoutes =
+  require('../modules/members/member.routes');
+
 const router =
   express.Router();
 
@@ -74,6 +77,11 @@ router.use(
 router.use(
   '/users',
   userRoutes
+);
+
+router.use(
+  '/members',
+  memberRoutes
 );
 
 module.exports =

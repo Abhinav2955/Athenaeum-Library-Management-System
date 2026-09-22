@@ -7,6 +7,9 @@ const ApiResponse =
 const memberService =
   require('./member.service');
 
+const userService =
+  require('../users/user.service');
+
 const searchMembers =
   asyncHandler(
     async (
@@ -54,12 +57,18 @@ const updateMembershipStatus =
       res
     ) => {
       const member =
-        await memberService
-          .updateMembershipStatus(
-            req.params.id,
-            req.body
-              .membershipStatus
-          );
+        await userService
+          .updateMembershipStatus({
+            targetUserId:
+              req.params.id,
+
+            actorUserId:
+              req.user.id,
+
+            membershipStatus:
+              req.body
+                .membershipStatus,
+          });
 
       return new ApiResponse(
         200,
