@@ -47,6 +47,7 @@ const member = {
 
 let adminToken;
 let memberToken;
+let memberUser;
 
 let createdBookId;
 
@@ -129,6 +130,14 @@ beforeAll(
       await registerAndLogin(
         member
       );
+
+    memberUser =
+      await User.findOne({
+        where: {
+          email:
+            member.email,
+        },
+      });
 
     await request(app)
       .post(
@@ -467,6 +476,106 @@ describe(
             .body
             .quantity
         ).toBe(2);
+      }
+    );
+
+    it(
+      'records member suspension through the members endpoint',
+      async () => {
+        const res =
+          await request(app)
+            .patch(
+              `/api/v1/members/${memberUser.id}/status`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              membershipStatus:
+                'suspended',
+            });
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        const log =
+          await waitForAudit({
+            action:
+              'MEMBERSHIP_SUSPENDED',
+
+            entityId:
+              memberUser.id,
+          });
+
+        expect(
+          log
+        ).not.toBeNull();
+
+        expect(
+          log.entity
+        ).toBe(
+          'user'
+        );
+
+        expect(
+          log.metadataJson
+            .request
+            .body
+            .membershipStatus
+        ).toBe(
+          'suspended'
+        );
+
+        expect(
+          log.metadataJson
+            .path
+        ).toBe(
+          `/api/v1/members/${memberUser.id}/status`
+        );
+      }
+    );
+
+    it(
+      'records member reactivation through the members endpoint',
+      async () => {
+        const res =
+          await request(app)
+            .patch(
+              `/api/v1/members/${memberUser.id}/status`
+            )
+            .set(
+              'Authorization',
+              `Bearer ${adminToken}`
+            )
+            .send({
+              membershipStatus:
+                'active',
+            });
+
+        expect(
+          res.statusCode
+        ).toBe(200);
+
+        const log =
+          await waitForAudit({
+            action:
+              'MEMBERSHIP_ACTIVATED',
+
+            entityId:
+              memberUser.id,
+          });
+
+        expect(
+          log
+        ).not.toBeNull();
+
+        expect(
+          log.entity
+        ).toBe(
+          'user'
+        );
       }
     );
 

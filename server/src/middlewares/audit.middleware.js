@@ -277,10 +277,19 @@ const resolveAuditEvent =
       };
     }
 
-    const membershipMatch =
+    const userMembershipMatch =
       path.match(
         /^\/api\/v1\/users\/([^/]+)\/membership\/?$/
       );
+
+    const memberStatusMatch =
+      path.match(
+        /^\/api\/v1\/members\/([^/]+)\/status\/?$/
+      );
+
+    const membershipMatch =
+      userMembershipMatch ||
+      memberStatusMatch;
 
     if (
       membershipMatch &&
