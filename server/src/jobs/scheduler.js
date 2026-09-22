@@ -77,12 +77,6 @@ const safelyQueueEmail =
       logger.warn(
         'Could not queue notification email',
         {
-          to:
-            payload.to,
-
-          subject:
-            payload.subject,
-
           error:
             error.message,
         }
@@ -611,27 +605,30 @@ const runMaintenanceSweep =
 
 const startScheduledJobs =
   () => {
-    cron.schedule(
-      '0 * * * *',
+    const maintenanceTask =
+      cron.schedule(
+        '0 * * * *',
 
-      async () => {
-        try {
-          await runMaintenanceSweep();
-        } catch (error) {
-          logger.error(
-            'Scheduled maintenance sweep failed',
-            {
-              error:
-                error.message,
-            }
-          );
+        async () => {
+          try {
+            await runMaintenanceSweep();
+          } catch (error) {
+            logger.error(
+              'Scheduled maintenance sweep failed',
+              {
+                error:
+                  error.message,
+              }
+            );
+          }
         }
-      }
-    );
+      );
 
     logger.info(
       `⏰ Scheduled jobs registered (hourly: overdue detection, reservation expiry, ${DUE_SOON_WINDOW_HOURS}h due reminders)`
     );
+
+    return maintenanceTask;
   };
 
 module.exports = {

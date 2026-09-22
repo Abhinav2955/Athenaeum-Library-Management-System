@@ -45,6 +45,7 @@ const redis =
 let server;
 let io;
 let emailWorker;
+let maintenanceTask;
 let shuttingDown =
   false;
 
@@ -86,7 +87,8 @@ const start =
         }
       );
 
-    startScheduledJobs();
+    maintenanceTask =
+      startScheduledJobs();
 
     emailWorker =
       startEmailWorker();
@@ -162,6 +164,12 @@ const shutdown =
     forceExit.unref();
 
     try {
+      if (maintenanceTask) {
+        maintenanceTask.stop();
+        maintenanceTask =
+          null;
+      }
+
       await closeHttpServer();
 
       if (io) {
